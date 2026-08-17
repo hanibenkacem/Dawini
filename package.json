@@ -1,0 +1,67 @@
+{
+  "name": "medical-cabinet",
+  "version": "1.0.0",
+  "main": "electron/main.js",
+  "scripts": {
+    "react": "cd frontend && npm run dev",
+    "dev": "concurrently \"npm run react\" \"wait-on http://localhost:5173 && electron .\"",
+    "build:react": "cd frontend && npm run build",
+    "dist": "npm run build:react && electron-builder"
+  },
+  "build": {
+    "appId": "com.dawini.cabinet",
+    "productName": "Dawini",
+    "directories": {
+      "output": "dist_electron"
+    },
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/bcrypt/**/*"
+    ],
+    "files": [
+      "electron/**/*",
+      "frontend/dist/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "backend",
+        "to": "backend",
+        "filter": [
+          "**/*",
+          "!.env",
+          "!uploads/**",
+          "!**/*.test.js"
+        ]
+      },
+      {
+        "from": "backend/node_modules",
+        "to": "backend/node_modules"
+      },
+      {
+        "from": "mysql-portable",
+        "to": "mysql-portable"
+      },
+      {
+        "from": "cabinet.sql",
+        "to": "cabinet.sql"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "mysql2": "^3.22.5"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.3",
+    "electron": "^42.4.1",
+    "electron-builder": "^26.15.3",
+    "wait-on": "^9.0.10"
+  }
+}

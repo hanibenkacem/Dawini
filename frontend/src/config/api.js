@@ -1,0 +1,1 @@
+export const API_BASE = window.__DAWINI_API_BASE__ || 'http://localhost:3000';
