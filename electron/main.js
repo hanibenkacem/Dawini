@@ -1,12 +1,12 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { autoUpdater } = require('electron-updater');
 const { startMysqld, stopMysqld } = require('./mysql-manager');
 const { setupAppDatabase } = require('./setup-database');
+const { runMigrations } = require('./migrations');
 const { registerLicensingIpc } = require('./licensing/ipc');
 const { LicenseManager } = require('./licensing/licenseManager');
-// LicenseManager takes no constructor args — it pulls machineId/crypto/
-// secureStore in internally and lazily computes the machine ID on first use.
 const licenseManager = new LicenseManager();
 
 app.commandLine.appendSwitch('enable-print-preview');
@@ -93,6 +93,16 @@ async function bootServerRole() {
       : path.join(process.resourcesPath, 'cabinet.sql'),
   });
   log('setupAppDatabase done, creds: ' + JSON.stringify({ ...dbCreds, password: '***' }));
+
+  log('Running migrations...');
+  try {
+    await runMigrations(dbCreds);
+    log('Migrations done');
+  } catch (err) {
+    log('FATAL: migrations failed: ' + err.stack);
+    throw err;
+  }
+
   startBackendInProcess(dbCreds);
 
   backendReady = true;
@@ -121,18 +131,52 @@ function createWindow() {
   }
 }
 
+// ── Auto-updater ─────────────────────────────────────────────────────────
+function initAutoUpdater() {
+  if (isDev) {
+    log('Dev mode — skipping auto-updater');
+    return;
+  }
+
+  autoUpdater.logger = { info: log, warn: log, error: log, debug: () => {} };
+
+  autoUpdater.on('update-available', (info) => {
+    log('Update available: ' + info.version);
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    log('No update available');
+  });
+
+  autoUpdater.on('error', (err) => {
+    log('Auto-updater error: ' + err.stack);
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    log('Update downloaded: ' + info.version);
+    dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      title: 'Mise à jour disponible',
+      message: `Une nouvelle version (${info.version}) de Dawini a été téléchargée. Redémarrer maintenant pour l'installer ?`,
+      buttons: ['Redémarrer maintenant', 'Plus tard'],
+    }).then((result) => {
+      if (result.response === 0) {
+        autoUpdater.quitAndInstall();
+      }
+    });
+  });
+
+  autoUpdater.checkForUpdatesAndNotify();
+  setInterval(() => autoUpdater.checkForUpdatesAndNotify(), 4 * 60 * 60 * 1000);
+}
+
 app.whenReady().then(async () => {
   log('app.whenReady() fired');
   log('userData path: ' + app.getPath('userData'));
 
-  // Show the window immediately — ActivationScreen renders and waits on
-  // backend-ready internally, instead of the whole app blocking on MySQL
-  // boot before any window appears.
   createWindow();
+  initAutoUpdater();
 
-  // Licensing IPC must be registered before the renderer loads, so
-  // ActivationScreen's window.licensing.getStatus() call has a handler
-  // to talk to.
   try {
     registerLicensingIpc(licenseManager);
     log('Licensing IPC handlers registered');
@@ -144,14 +188,11 @@ app.whenReady().then(async () => {
   log('Config read: ' + JSON.stringify(config));
 
   if (config && config.role === 'server') {
-    // Fire-and-forget: runs in the background while the window is already
-    // visible. Errors are logged rather than blocking startup.
     bootServerRole().catch((err) => {
       log('FATAL bootServerRole error: ' + err.stack);
     });
   } else {
     log('Not a server role — skipping MySQL/backend boot. Config was: ' + JSON.stringify(config));
-    // Client role has no local MySQL/backend to wait on.
     backendReady = true;
   }
 });
@@ -168,19 +209,10 @@ ipcMain.handle('config:set', (_event, { role, serverIp }) => {
   setTimeout(() => { app.relaunch(); app.exit(0); }, 200);
 });
 
-// Lets the renderer poll current backend readiness at any time (e.g. on
-// mount, in case it missed the push event), independent of the one-time
-// 'backend-ready' event sent from bootServerRole().
 ipcMain.on('backend:get-status-sync', (event) => {
   event.returnValue = { ready: backendReady };
 });
 
-// ── Print HTML in a hidden window, falling back to Save-as-PDF ──────────────
-// Tries the real printer first (shows the OS print dialog since silent:false).
-// If that fails — most commonly because no default printer is configured on
-// the machine — it renders the same HTML to a PDF and opens a native
-// "Save As" dialog so the user still ends up with a usable document instead
-// of the print button silently doing nothing.
 ipcMain.handle('print-html', (_event, html) => {
   return new Promise((resolve) => {
     const printWin = new BrowserWindow({

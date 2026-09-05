@@ -1,16 +1,22 @@
 {
   "name": "medical-cabinet",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "main": "electron/main.js",
   "scripts": {
     "react": "cd frontend && npm run dev",
     "dev": "concurrently \"npm run react\" \"wait-on http://localhost:5173 && electron .\"",
     "build:react": "cd frontend && npm run build",
-    "dist": "npm run build:react && electron-builder"
+    "dist": "npm run build:react && electron-builder --publish always"
   },
   "build": {
     "appId": "com.dawini.cabinet",
     "productName": "Dawini",
+    "publish": {
+    "provider": "github",
+    "owner": "hanibenkacem",
+    "repo": "Dawini",
+    "private": true
+  },
     "directories": {
       "output": "dist_electron"
     },
@@ -56,6 +62,7 @@
     }
   },
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "mysql2": "^3.22.5"
   },
   "devDependencies": {
