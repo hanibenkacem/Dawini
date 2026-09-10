@@ -3,6 +3,7 @@ import { Outlet, useNavigate } from "react-router-dom";
 import ReceptionistSidebar from "./reception/ReceptionistSideBar"; // Update this path if needed
 import ReceptionistHeader from "./reception/ReceptionistHeader";   // Update this path if needed
 import { QueueAlertProvider } from "../context/QueueAlertContext"; // Update this path if needed
+import { UpdateProvider } from "../context/UpdateProvider";        // Update this path if needed
 
 const LIGHT = { bg: "#F0F4F8" };
 const DARK = { bg: "#0D1520" };
@@ -30,31 +31,37 @@ export default function MainLayout() {
     // QueueAlertProvider lives here, above the Outlet, so polling/sounds/the
     // payment modal keep running no matter which page is rendered inside the
     // Outlet — it only unmounts on logout (when MainLayout itself unmounts).
+    //
+    // UpdateProvider sits alongside it for the same reason: the update
+    // banner should persist across page navigation instead of living inside
+    // one page's component tree.
     <QueueAlertProvider>
-      <div
-        style={{
-          display: "flex",
-          minHeight: "100vh",
-          width: "100vw",
-          background: C.bg,
-          transition: "background 0.3s ease",
-          overflowX: "hidden",
-        }}
-      >
-        {/* SINGLE SIDEBAR INSTANCE */}
-        <ReceptionistSidebar onLogout={handleLogout} />
+      <UpdateProvider>
+        <div
+          style={{
+            display: "flex",
+            minHeight: "100vh",
+            width: "100vw",
+            background: C.bg,
+            transition: "background 0.3s ease",
+            overflowX: "hidden",
+          }}
+        >
+          {/* SINGLE SIDEBAR INSTANCE */}
+          <ReceptionistSidebar onLogout={handleLogout} />
 
-        {/* VIEWPORT CONTROLLER */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-          {/* SINGLE HEADER INSTANCE */}
-          <ReceptionistHeader />
+          {/* VIEWPORT CONTROLLER */}
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+            {/* SINGLE HEADER INSTANCE */}
+            <ReceptionistHeader />
 
-          {/* COMPONENT OUTLET TARGET */}
-          <div style={{ flex: 1, overflowY: "auto" }}>
-            <Outlet context={{ dark }} />
+            {/* COMPONENT OUTLET TARGET */}
+            <div style={{ flex: 1, overflowY: "auto" }}>
+              <Outlet context={{ dark }} />
+            </div>
           </div>
         </div>
-      </div>
+      </UpdateProvider>
     </QueueAlertProvider>
   );
 }

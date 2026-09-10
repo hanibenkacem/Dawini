@@ -26,6 +26,23 @@ let mainWindow;
 let backendStarted = false;
 let backendReady = false;
 
+// Keep the latest update status in memory so the renderer can ask for it
+// on mount (e.g. after a page reload) instead of only reacting to events.
+let lastUpdateStatus = { status: 'idle' };
+
+function sendUpdateStatus(data) {
+  lastUpdateStatus = data;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('update:status', data);
+  }
+}
+
+function sendUpdateProgress(data) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('update:progress', data);
+  }
+}
+
 function readConfig() {
   try { return JSON.parse(fs.readFileSync(configPath, 'utf-8')); }
   catch { return null; }
@@ -140,30 +157,48 @@ function initAutoUpdater() {
 
   autoUpdater.logger = { info: log, warn: log, error: log, debug: () => {} };
 
+  autoUpdater.on('checking-for-update', () => {
+    log('Checking for update...');
+    sendUpdateStatus({ status: 'checking' });
+  });
+
   autoUpdater.on('update-available', (info) => {
     log('Update available: ' + info.version);
+    sendUpdateStatus({
+      status: 'available',
+      version: info.version,
+      releaseNotes: info.releaseNotes || null,
+      releaseDate: info.releaseDate || null,
+    });
   });
 
   autoUpdater.on('update-not-available', () => {
     log('No update available');
+    sendUpdateStatus({ status: 'not-available' });
   });
 
-  autoUpdater.on('error', (err) => {
-    log('Auto-updater error: ' + err.stack);
+  autoUpdater.on('download-progress', (progress) => {
+    sendUpdateProgress({
+      percent: progress.percent,
+      transferred: progress.transferred,
+      total: progress.total,
+      bytesPerSecond: progress.bytesPerSecond,
+    });
   });
 
   autoUpdater.on('update-downloaded', (info) => {
     log('Update downloaded: ' + info.version);
-    dialog.showMessageBox(mainWindow, {
-      type: 'info',
-      title: 'Mise à jour disponible',
-      message: `Une nouvelle version (${info.version}) de Dawini a été téléchargée. Redémarrer maintenant pour l'installer ?`,
-      buttons: ['Redémarrer maintenant', 'Plus tard'],
-    }).then((result) => {
-      if (result.response === 0) {
-        autoUpdater.quitAndInstall();
-      }
+    sendUpdateStatus({
+      status: 'downloaded',
+      version: info.version,
+      releaseNotes: info.releaseNotes || null,
+      releaseDate: info.releaseDate || null,
     });
+  });
+
+  autoUpdater.on('error', (err) => {
+    log('Auto-updater error: ' + err.stack);
+    sendUpdateStatus({ status: 'error', message: err.message });
   });
 
   autoUpdater.checkForUpdatesAndNotify();
@@ -211,6 +246,16 @@ ipcMain.handle('config:set', (_event, { role, serverIp }) => {
 
 ipcMain.on('backend:get-status-sync', (event) => {
   event.returnValue = { ready: backendReady };
+});
+
+// Renderer asks for this on mount so a page reload doesn't lose update state
+ipcMain.on('update:get-status-sync', (event) => {
+  event.returnValue = lastUpdateStatus;
+});
+
+ipcMain.on('update:install-now', () => {
+  log('User triggered install-now, quitting and installing update');
+  autoUpdater.quitAndInstall();
 });
 
 ipcMain.handle('print-html', (_event, html) => {

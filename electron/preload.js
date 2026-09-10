@@ -38,3 +38,15 @@ contextBridge.exposeInMainWorld('dawiniBackend', {
   getStatusSync: () => ipcRenderer.sendSync('backend:get-status-sync'),
   onReady: (callback) => ipcRenderer.on('backend-ready', callback),
 });
+
+// Auto-updater bridge — lets UpdateProvider (frontend) show a progress bar
+// and "what's new" instead of the update happening silently in the
+// background. getStatusSync covers the case where the update event fired
+// before the React tree mounted (or after a reload) so the UI doesn't
+// miss it; onStatus/onProgress cover live updates while mounted.
+contextBridge.exposeInMainWorld('updaterAPI', {
+  getStatusSync: () => ipcRenderer.sendSync('update:get-status-sync'),
+  onStatus: (callback) => ipcRenderer.on('update:status', (_event, data) => callback(data)),
+  onProgress: (callback) => ipcRenderer.on('update:progress', (_event, data) => callback(data)),
+  installNow: () => ipcRenderer.send('update:install-now'),
+});

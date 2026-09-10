@@ -1,6 +1,6 @@
 {
   "name": "medical-cabinet",
-  "version": "1.0.3",
+  "version": "1.0.5",
   "main": "electron/main.js",
   "scripts": {
     "react": "cd frontend && npm run dev",
@@ -12,11 +12,10 @@
     "appId": "com.dawini.cabinet",
     "productName": "Dawini",
     "publish": {
-    "provider": "github",
-    "owner": "hanibenkacem",
-    "repo": "Dawini",
-    "private": true
-  },
+      "provider": "github",
+      "owner": "hanibenkacem",
+      "repo": "dawini-releases"
+    },
     "directories": {
       "output": "dist_electron"
     },

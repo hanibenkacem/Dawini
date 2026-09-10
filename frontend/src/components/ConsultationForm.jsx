@@ -24,7 +24,88 @@ const MEDICATION_FORMS = [
   { value: "gouttes", label: "Gouttes", icon: "💧", unit: "gttes" },
   { value: "pommade", label: "Pommade / Crème", icon: "🧴", unit: "application" },
   { value: "suppositoire", label: "Suppositoire", icon: "🔹", unit: "supp" },
+  { value: "patch", label: "Patch", icon: "🩹", unit: "patch" },
+  { value: "inhalation", label: "Inhalation", icon: "💨", unit: "bouffée" },
 ];
+
+// ─── FORME (DB) → MEDICATION_FORMS matching ───────────────────────────────────
+// The `medicaments` table stores a free-text FORME column (e.g. "Comprimé",
+// "Solution buvable", "Suppositoire"...). When a doctor picks a medication
+// that already exists in the DB, we try to auto-select the matching entry in
+// MEDICATION_FORMS so they don't have to re-pick it manually. If nothing
+// matches (unknown/unexpected wording), we fall back to letting them choose,
+// exactly like a manually-added medication.
+
+const normalizeForme = (str) =>
+  (str || "")
+    .toString()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // strip accents (é -> e, etc.)
+    .trim();
+
+// Order matters here: some DB wordings share a word (e.g. "POUDRE POUR
+// SOLUTION BUVABLE EN SACHET DOSE" vs "POUDRE POUR SOLUTION INJECTABLE" both
+// start with "poudre"; "SOLUTION BUVABLE EN GOUTTES" contains "buvable" just
+// like plain "SOLUTION BUVABLE"). matchFormeToMedicationForm checks the more
+// specific/narrow categories first so those don't get swallowed by a
+// broader keyword ("buvable", "poudre"...) matched later. Includes common
+// abbreviations and a couple of DB typos ("COMRPIME", "GELLULE") seen in the
+// real data.
+const FORME_SYNONYMS = {
+  patch: ["patch"],
+  inhalation: [
+    "inhalation", "inhal", "aerosol", "nebulis", "neb.", "trache", "gaz pour",
+  ],
+  suppositoire: ["suppositoire", "suppositoires", "ovule", "ovules"],
+  // Eye, ear and nasal liquids (drops, sprays, eye washes) all share the
+  // "gouttes" bucket since they're dosed the same way. Ointments/gels for
+  // the same routes (pommade ophtalmique, gel dermique...) are handled by
+  // "pommade" below instead — checked later so they don't get caught here.
+  gouttes: [
+    "goutte", "gouttes", "gttes", "collyre", "auric",
+    "nasal", "nas.", "pulverisation",
+    "suspension ophtalmique", "emulsion ophtalmique", "instillation oculaire",
+    "lavage opht",
+  ],
+  sachet: ["sachet", "sachets", "stick unidose"],
+  injection: [
+    "injectable", "injection", "inj", "perf", "perfusion",
+    "lyophilisee", "lyophilise", "lyoph", "seringue", "carpules",
+    "cartouche", "stylo", "dialyseur", "implant",
+  ],
+  sirop: [
+    "sirop", "solution buvable", "suspension buvable", "buvable", "buvale",
+    "emulsion buvable", "amp.buv", "huile buvable", "gel buvable",
+  ],
+  gelule: [
+    "gelule", "gelules", "gellule", "gellules", "capsule", "capsules",
+    "microgranule", "gles.",
+  ],
+  // Checked after gelule, so a bare "gel" here can't steal "gelule"/"gellule"
+  // entries (those already matched above). Covers ointments, creams, and
+  // every gel variant (dermique, ophtalmique, buccal, rectal, oral...) plus
+  // mouth/skin topical products.
+  pommade: [
+    "creme", "pommade", "onguent", "lotion", "gel", "dermiq", "derm.",
+    "appl", "usage externe", "vernis", "shampoing", "mousse cutanee",
+    "bain de bouche", "collutoire", "gingivale", "buccal", "rect",
+  ],
+  comprime: [
+    "comprime", "comprimes", "cp", "comp.", "drg.",
+    "comrpime", "comprimpe", "comrime pellicule", "comprim2", "coprime pellicule",
+  ],
+};
+
+const matchFormeToMedicationForm = (forme) => {
+  const n = normalizeForme(forme);
+  if (!n) return null;
+  for (const [value, keywords] of Object.entries(FORME_SYNONYMS)) {
+    if (keywords.some((kw) => n.includes(kw))) return value;
+  }
+  return null;
+};
+
 
 const DOC_TYPES = [
   { value: "analyse", label: "Analyse biologique", icon: "🧪" },
@@ -394,8 +475,15 @@ const DosageModal = ({ med, onConfirm, onCancel }) => {
   const [manualName, setManualName] = useState(med.NOM_DE_MARQUE || "");
   const [manualDCI, setManualDCI] = useState(med.DENOMINATION_COMMUNE_INTERNATIONALE || "");
   const [manualDosage, setManualDosage] = useState(med.DOSAGE || "");
+
+  // If this medication came from the database, try to auto-detect its
+  // pharmaceutical form from the FORME column. If it's a manual entry (or
+  // FORME doesn't match anything we recognize), fall back to the first form
+  // and let the doctor pick it themselves — no different from before.
+  const detectedFormValue = !med.manual ? matchFormeToMedicationForm(med.FORME) : null;
+
   const [dosage, setDosage] = useState({
-    form: MEDICATION_FORMS[0].value,
+    form: detectedFormValue || MEDICATION_FORMS[0].value,
     quantity: "1", frequency: FREQUENCIES[0], customFrequency: "",
     duration: DURATIONS[2], customDuration: "",
     mealRelation: MEAL_RELATIONS[3], note: "",
@@ -415,7 +503,7 @@ const DosageModal = ({ med, onConfirm, onCancel }) => {
     let line = name;
     if (dci) line += ` (${dci})`;
     if (dos) line += ` ${dos}`;
-    line += ` — ${dosage.quantity} ${selectedForm.unit}, ${freq}, ${dur}`;
+    line += ` — ${selectedForm.label}, ${dosage.quantity} ${selectedForm.unit}, ${freq}, ${dur}`;
     if (dosage.mealRelation !== MEAL_RELATIONS[3]) line += `, ${dosage.mealRelation.toLowerCase()}`;
     if (dosage.note.trim()) line += `. ${dosage.note.trim()}`;
     onConfirm(line);
@@ -464,7 +552,18 @@ const DosageModal = ({ med, onConfirm, onCancel }) => {
 
         {/* Forme pharmaceutique */}
         <div style={{ marginBottom: 12 }}>
-          <label style={labelStyle}>Forme</label>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <label style={labelStyle}>Forme</label>
+            {detectedFormValue && (
+              <span style={{
+                fontSize: 10, color: "#0c4a6e", background: "#e0f2fe",
+                border: "1px solid #bae6fd", borderRadius: 999,
+                padding: "1px 7px", marginBottom: 4, fontWeight: 600,
+              }}>
+                détectée automatiquement
+              </span>
+            )}
+          </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
             {MEDICATION_FORMS.map((f) => (
               <button key={f.value} type="button" onClick={() => handleChange("form", f.value)}
@@ -531,7 +630,7 @@ const DosageModal = ({ med, onConfirm, onCancel }) => {
           padding: "10px 12px", marginBottom: "1.25rem",
           fontSize: 13, color: "#0c4a6e", fontFamily: "monospace",
         }}>
-          {displayName} — {dosage.quantity} {selectedForm.unit},{" "}
+          {displayName} — {selectedForm.label}, {dosage.quantity} {selectedForm.unit},{" "}
           {dosage.frequency === "Autre" ? dosage.customFrequency || "..." : dosage.frequency},{" "}
           {dosage.duration === "Autre" ? dosage.customDuration || "..." : dosage.duration}
           {dosage.mealRelation !== MEAL_RELATIONS[3] && `, ${dosage.mealRelation.toLowerCase()}`}
@@ -864,7 +963,9 @@ const ConsultationForm = ({ form, onChange, onSubmit, onOpenPreview, submitting,
                   <div key={med.id} onClick={() => handleSelect(med)}
                     className="px-3 py-3 hover:bg-blue-50 dark:hover:bg-gray-700 cursor-pointer text-sm border-b border-gray-100 dark:border-gray-700 last:border-none text-gray-900 dark:text-gray-100">
                     <span className="font-bold">{med.NOM_DE_MARQUE} ({med.DENOMINATION_COMMUNE_INTERNATIONALE})</span>
-                    <span className="text-gray-500 dark:text-gray-400 ml-2">{med.dosage || med.DOSAGE}</span>
+                    <span className="text-gray-500 dark:text-gray-400 ml-2">
+                      {med.FORME ? `${med.FORME} · ` : ""}{med.dosage || med.DOSAGE}
+                    </span>
                   </div>
                 ))}
                 <div onClick={() => handleSelect({ manual: true, NOM_DE_MARQUE: query, DENOMINATION_COMMUNE_INTERNATIONALE: "", DOSAGE: "" })}
