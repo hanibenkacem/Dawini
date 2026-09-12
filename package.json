@@ -1,12 +1,12 @@
 {
   "name": "medical-cabinet",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "main": "electron/main.js",
   "scripts": {
     "react": "cd frontend && npm run dev",
     "dev": "concurrently \"npm run react\" \"wait-on http://localhost:5173 && electron .\"",
     "build:react": "cd frontend && npm run build",
-    "dist": "npm run build:react && electron-builder --publish always"
+    "dist": "npm run build:react && electron-builder --publish always && node scripts/publish-fix.js"
   },
   "build": {
     "appId": "com.dawini.cabinet",
