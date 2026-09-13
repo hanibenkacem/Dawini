@@ -26,6 +26,76 @@ const parseMedLine = (line) => {
   return { name: line.slice(0, sepIdx).trim(), posology: line.slice(sepIdx + 3).trim() };
 };
 
+// Posology lines look like "Comprimé, 2x/jour, 7 jours[, avant le repas][. note]".
+// To put the duration on the same line as the medicament name (with a dotted
+// leader in between, prescription-pad style), we pull it back out of the
+// posology text via a pattern match instead of relying on a fixed comma
+// position — this way it still works even if the meal-relation or note
+// segments shift where the duration would otherwise sit.
+const DURATION_PATTERN = /(\d+\s*(?:jours?|semaines?|mois)|traitement continu)/i;
+
+const splitPosologyDuration = (posology) => {
+  if (!posology) return { duration: "", rest: "" };
+  const match = posology.match(DURATION_PATTERN);
+  if (!match) return { duration: "", rest: posology };
+  const duration = match[0];
+  const rest = (posology.slice(0, match.index) + posology.slice(match.index + duration.length))
+    .replace(/,\s*,/g, ",")
+    .replace(/^\s*,\s*/, "")
+    .replace(/,\s*$/, "")
+    .replace(/,\s*\./, ".")
+    .trim();
+  return { duration, rest };
+};
+
+// The medicament "name" is actually pre-assembled as "Brand (DCI) Dosage"
+// (see ConsultationForm's handleConfirm). When the full name is too wide to
+// fit next to the duration on one line, we drop just the "(DCI)" portion —
+// not an arbitrary character cut — since the brand name and dosage are what
+// actually matter for dispensing; the DCI is comparatively expendable.
+const NAME_WITH_DCI_PATTERN = /^(.*?)\s\(([^)]+)\)(\s.*)?$/;
+
+const nameWithoutDci = (name) => {
+  const match = name.match(NAME_WITH_DCI_PATTERN);
+  if (!match) return name;
+  const [, brand, , dosageTail] = match;
+  return `${brand}${dosageTail || ""}`.trim();
+};
+
+let _widthCanvas;
+const measureTextWidthPx = (text, fontSizePt, fontFamily = "'Times New Roman', Times, serif", fontWeight = "700") => {
+  if (!text || typeof document === "undefined") return 0;
+  _widthCanvas = _widthCanvas || document.createElement("canvas");
+  const ctx = _widthCanvas.getContext("2d");
+  const fontSizePx = fontSizePt * (96 / 72);
+  ctx.font = `${fontWeight} ${fontSizePx}px ${fontFamily}`;
+  return ctx.measureText(text).width;
+};
+
+// Card width (496px) minus its own horizontal padding (20px * 2).
+const CARD_CONTENT_WIDTH_PX = 496 - 40;
+// Reserved space for the dotted leader's minimum width + its side margins.
+const LEADER_RESERVE_PX = 12 + 12;
+
+// Decides whether the full "Brand (DCI) Dosage" name fits next to the
+// duration on one line at the given scale; if not, retries without the DCI.
+// Falls back to CSS ellipsis (applied where this is rendered) if it's still
+// too long even without the DCI — so nothing ever visually overflows.
+const resolveDisplayName = (name, duration, scale, fontFamily) => {
+  const nameSizePt = parseFloat(scale.nameSize);
+  const durationWidthPx = duration ? measureTextWidthPx(duration, parseFloat(scale.posoSize), fontFamily) : 0;
+  const availableForName = Math.max(
+    0,
+    CARD_CONTENT_WIDTH_PX - scale.badge - parseFloat(scale.rowGap) - (duration ? durationWidthPx + LEADER_RESERVE_PX : 0)
+  );
+
+  const fullWidthPx = measureTextWidthPx(name, nameSizePt, fontFamily);
+  if (fullWidthPx <= availableForName) return name;
+
+  const shortName = nameWithoutDci(name);
+  return shortName;
+};
+
 const MED_LIST_SCALES = {
   normal:  { nameSize: "11pt", posoSize: "9.5pt", badge: 22, badgeFont: "9pt",  rowGap: "10px", rowPad: "10px" },
   compact: { nameSize: "10pt", posoSize: "8.5pt", badge: 19, badgeFont: "8pt",  rowGap: "7px",  rowPad: "7px"  },
@@ -167,6 +237,8 @@ const OrdonnanceDocument = forwardRef(function OrdonnanceDocument(
                   const s = MED_LIST_SCALES[scaleForCount(medLines.length)];
                   return medLines.map((line, i, arr) => {
                     const { name, posology } = parseMedLine(line);
+                    const { duration, rest } = splitPosologyDuration(posology);
+                    const displayName = resolveDisplayName(name, duration, s, theme.fontFamily);
                     const isLast = i === arr.length - 1;
                     return (
                       <div
@@ -188,9 +260,35 @@ const OrdonnanceDocument = forwardRef(function OrdonnanceDocument(
                         >
                           {i + 1}
                         </span>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: s.nameSize, fontWeight: 700, color: "#111827" }}>{name}</div>
-                          {posology && <div style={{ fontSize: s.posoSize, color: theme.muted, marginTop: "2px" }}>{posology}</div>}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "baseline", minWidth: 0 }}>
+                            <span
+                              style={{
+                                fontSize: s.nameSize, fontWeight: 700, color: "#111827",
+                                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                                minWidth: 0, flexShrink: 1,
+                              }}
+                              title={name}
+                            >
+                              {displayName}
+                            </span>
+                            {duration && (
+                              <>
+                                <span
+                                  aria-hidden="true"
+                                  style={{
+                                    flex: "1 1 12px", minWidth: "12px", margin: "0 6px",
+                                    borderBottom: `1px dotted ${theme.muted}`,
+                                    transform: "translateY(-3px)",
+                                  }}
+                                />
+                                <span style={{ fontSize: s.posoSize, fontWeight: 700, color: theme.primary, whiteSpace: "nowrap", flexShrink: 0 }}>
+                                  {duration}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                          {rest && <div style={{ fontSize: s.posoSize, color: theme.muted, marginTop: "2px" }}>{rest}</div>}
                         </div>
                       </div>
                     );

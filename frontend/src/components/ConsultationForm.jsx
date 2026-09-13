@@ -12,20 +12,19 @@ const DURATIONS = [
 ];
 const MEAL_RELATIONS = ["Avant le repas", "Pendant le repas", "Après le repas", "Sans rapport"];
 
-// Pharmaceutical form of the medication — drives the unit word used in the
-// generated posology line ("2 cp" vs "2 ml" vs "1 inj", etc.) instead of
-// always assuming "cp" like before.
+// Pharmaceutical form of the medication — drives the wording used in the
+// generated posology line ("Comprimé" vs "Sirop" vs "Injection", etc.)
 const MEDICATION_FORMS = [
-  { value: "comprime", label: "Comprimé", icon: "💊", unit: "cp" },
-  { value: "gelule", label: "Gélule", icon: "💊", unit: "gél" },
-  { value: "sirop", label: "Sirop", icon: "🍯", unit: "ml" },
-  { value: "injection", label: "Injection", icon: "💉", unit: "inj" },
-  { value: "sachet", label: "Sachet", icon: "🧂", unit: "sachet" },
-  { value: "gouttes", label: "Gouttes", icon: "💧", unit: "gttes" },
-  { value: "pommade", label: "Pommade / Crème", icon: "🧴", unit: "application" },
-  { value: "suppositoire", label: "Suppositoire", icon: "🔹", unit: "supp" },
-  { value: "patch", label: "Patch", icon: "🩹", unit: "patch" },
-  { value: "inhalation", label: "Inhalation", icon: "💨", unit: "bouffée" },
+  { value: "comprime", label: "Comprimé", icon: "💊" },
+  { value: "gelule", label: "Gélule", icon: "💊" },
+  { value: "sirop", label: "Sirop", icon: "🍯" },
+  { value: "injection", label: "Injection", icon: "💉" },
+  { value: "sachet", label: "Sachet", icon: "🧂" },
+  { value: "gouttes", label: "Gouttes", icon: "💧" },
+  { value: "pommade", label: "Pommade / Crème", icon: "🧴" },
+  { value: "suppositoire", label: "Suppositoire", icon: "🔹" },
+  { value: "patch", label: "Patch", icon: "🩹" },
+  { value: "inhalation", label: "Inhalation", icon: "💨" },
 ];
 
 // ─── FORME (DB) → MEDICATION_FORMS matching ───────────────────────────────────
@@ -484,7 +483,7 @@ const DosageModal = ({ med, onConfirm, onCancel }) => {
 
   const [dosage, setDosage] = useState({
     form: detectedFormValue || MEDICATION_FORMS[0].value,
-    quantity: "1", frequency: FREQUENCIES[0], customFrequency: "",
+    frequency: FREQUENCIES[0], customFrequency: "",
     duration: DURATIONS[2], customDuration: "",
     mealRelation: MEAL_RELATIONS[3], note: "",
   });
@@ -503,7 +502,7 @@ const DosageModal = ({ med, onConfirm, onCancel }) => {
     let line = name;
     if (dci) line += ` (${dci})`;
     if (dos) line += ` ${dos}`;
-    line += ` — ${selectedForm.label}, ${dosage.quantity} ${selectedForm.unit}, ${freq}, ${dur}`;
+    line += ` — ${selectedForm.label}, ${freq}, ${dur}`;
     if (dosage.mealRelation !== MEAL_RELATIONS[3]) line += `, ${dosage.mealRelation.toLowerCase()}`;
     if (dosage.note.trim()) line += `. ${dosage.note.trim()}`;
     onConfirm(line);
@@ -574,19 +573,12 @@ const DosageModal = ({ med, onConfirm, onCancel }) => {
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-          <div>
-            <label style={labelStyle}>Quantité ({selectedForm.unit})</label>
-            <input type="number" min="0.5" step="0.5" value={dosage.quantity}
-              onChange={(e) => handleChange("quantity", e.target.value)} style={inputStyle} />
-          </div>
-          <div>
-            <label style={labelStyle}>Par rapport au repas</label>
-            <select value={dosage.mealRelation}
-              onChange={(e) => handleChange("mealRelation", e.target.value)} style={inputStyle}>
-              {MEAL_RELATIONS.map((m) => <option key={m}>{m}</option>)}
-            </select>
-          </div>
+        <div style={{ marginBottom: 12 }}>
+          <label style={labelStyle}>Par rapport au repas</label>
+          <select value={dosage.mealRelation}
+            onChange={(e) => handleChange("mealRelation", e.target.value)} style={inputStyle}>
+            {MEAL_RELATIONS.map((m) => <option key={m}>{m}</option>)}
+          </select>
         </div>
 
         <div style={{ marginBottom: 12 }}>
@@ -630,7 +622,7 @@ const DosageModal = ({ med, onConfirm, onCancel }) => {
           padding: "10px 12px", marginBottom: "1.25rem",
           fontSize: 13, color: "#0c4a6e", fontFamily: "monospace",
         }}>
-          {displayName} — {selectedForm.label}, {dosage.quantity} {selectedForm.unit},{" "}
+          {displayName} — {selectedForm.label},{" "}
           {dosage.frequency === "Autre" ? dosage.customFrequency || "..." : dosage.frequency},{" "}
           {dosage.duration === "Autre" ? dosage.customDuration || "..." : dosage.duration}
           {dosage.mealRelation !== MEAL_RELATIONS[3] && `, ${dosage.mealRelation.toLowerCase()}`}
