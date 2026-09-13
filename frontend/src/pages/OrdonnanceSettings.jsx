@@ -36,6 +36,12 @@ export default function OrdonnancePage() {
     template: DEFAULT_TEMPLATE_ID,
   });
 
+  // Tracks whether the user explicitly removed a previously-saved logo/background,
+  // so we can tell the backend to actually delete it on save (rather than just
+  // "no new file was selected, keep the old one").
+  const [removeLogo, setRemoveLogo] = useState(false);
+  const [removeBackground, setRemoveBackground] = useState(false);
+
   const [patient, setPatient] = useState({
     nom_fr: "",
     prenom_fr: "",
@@ -71,6 +77,8 @@ export default function OrdonnancePage() {
             background: result.background ? `${API_BASE}/uploads/${result.background}` : "",
             template: result.template || DEFAULT_TEMPLATE_ID,
           }));
+          setRemoveLogo(false);
+          setRemoveBackground(false);
         }
       } catch (err) {
         console.error("Could not load saved settings:", err);
@@ -88,8 +96,17 @@ export default function OrdonnancePage() {
     formData.append("telephone", data.telephone);
     formData.append("template", data.template);
 
-    if (logoInputRef.current?.files[0]) formData.append("logo", logoInputRef.current.files[0]);
-    if (backgroundInputRef.current?.files[0]) formData.append("background", backgroundInputRef.current.files[0]);
+    if (logoInputRef.current?.files[0]) {
+      formData.append("logo", logoInputRef.current.files[0]);
+    } else if (removeLogo) {
+      formData.append("remove_logo", "true");
+    }
+
+    if (backgroundInputRef.current?.files[0]) {
+      formData.append("background", backgroundInputRef.current.files[0]);
+    } else if (removeBackground) {
+      formData.append("remove_background", "true");
+    }
 
     try {
       const response = await fetch(`${API_BASE}/ordonnance-settings`, {
@@ -100,6 +117,8 @@ export default function OrdonnancePage() {
 
       if (response.ok) {
         showToast("✅ Modèle enregistré avec succès !", "success");
+        setRemoveLogo(false);
+        setRemoveBackground(false);
       } else {
         showToast("❌ Erreur lors de l'enregistrement.", "error");
       }
@@ -118,6 +137,23 @@ export default function OrdonnancePage() {
     if (files && files[0]) {
       const url = URL.createObjectURL(files[0]);
       setData({ ...data, [name]: url });
+      // A new file was chosen, so any pending "remove" no longer applies.
+      if (name === "logo") setRemoveLogo(false);
+      if (name === "background") setRemoveBackground(false);
+    }
+  };
+
+  // Clears the selected/saved image both from local preview state and the
+  // underlying <input type="file">, and flags it for deletion on next save.
+  const handleRemoveImage = (field) => {
+    setData((prev) => ({ ...prev, [field]: "" }));
+    if (field === "logo") {
+      if (logoInputRef.current) logoInputRef.current.value = "";
+      setRemoveLogo(true);
+    }
+    if (field === "background") {
+      if (backgroundInputRef.current) backgroundInputRef.current.value = "";
+      setRemoveBackground(true);
     }
   };
 
@@ -151,6 +187,13 @@ export default function OrdonnancePage() {
   const inputStyle = {
     width: "100%", padding: "10px 12px", borderRadius: "12px", border: "1px solid #cfdfed",
     fontSize: "0.9rem", boxSizing: "border-box", backgroundColor: "#fff", outline: "none"
+  };
+
+  const removeBtnStyle = {
+    background: "#fee2e2", color: "#dc2626", border: "none", borderRadius: "50%",
+    width: 22, height: 22, minWidth: 22, cursor: "pointer", fontSize: "0.75rem",
+    lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center",
+    flexShrink: 0,
   };
 
   const doctorForPreview = {
@@ -237,13 +280,52 @@ export default function OrdonnancePage() {
               <input name="specialite" value={data.specialite} placeholder="Spécialité" onChange={handleChange} style={inputStyle} /><br /><br />
               <input name="telephone" value={data.telephone} placeholder="Téléphone" onChange={handleChange} style={inputStyle} /><br /><br />
               <input name="adresse" value={data.adresse} placeholder="Adresse" onChange={handleChange} style={inputStyle} /><br /><br />
-              <label style={{fontSize: '0.8rem'}}>Logo (cachet médical)</label>
-              <input type="file" name="logo" ref={logoInputRef} onChange={handleFile} style={{ marginTop: 4 }} accept="image/*" /><br /><br />
-              <label style={{fontSize: '0.8rem'}}>Filigrane</label>
-              <input type="file" name="background" ref={backgroundInputRef} onChange={handleFile} style={{ marginTop: 4 }} accept="image/*" />
+
+              <label style={{ fontSize: '0.8rem' }}>Logo (cachet médical)</label>
+              <input type="file" name="logo" ref={logoInputRef} onChange={handleFile} style={{ marginTop: 4 }} accept="image/*" />
               {data.logo && (
-                <p style={{ fontSize: '0.7rem', color: '#10b981', margin: '4px 0' }}>✅ Logo déjà enregistré</p>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                  <img
+                    src={data.logo}
+                    alt="Logo"
+                    style={{ width: 36, height: 36, objectFit: "contain", borderRadius: 6, border: "1px solid #e2e8f0", background: "#fff" }}
+                  />
+                  <span style={{ fontSize: "0.7rem", color: "#10b981", flex: 1 }}>✅ Logo enregistré</span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveImage("logo")}
+                    style={removeBtnStyle}
+                    title="Supprimer le logo"
+                    aria-label="Supprimer le logo"
+                  >
+                    ✕
+                  </button>
+                </div>
               )}
+              <br />
+
+              <label style={{ fontSize: '0.8rem' }}>Filigrane</label>
+              <input type="file" name="background" ref={backgroundInputRef} onChange={handleFile} style={{ marginTop: 4 }} accept="image/*" />
+              {data.background && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                  <img
+                    src={data.background}
+                    alt="Filigrane"
+                    style={{ width: 36, height: 36, objectFit: "contain", borderRadius: 6, border: "1px solid #e2e8f0", background: "#fff" }}
+                  />
+                  <span style={{ fontSize: "0.7rem", color: "#10b981", flex: 1 }}>✅ Filigrane enregistré</span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveImage("background")}
+                    style={removeBtnStyle}
+                    title="Supprimer le filigrane"
+                    aria-label="Supprimer le filigrane"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
               <button onClick={saveDoctorSettings} style={{ backgroundColor: "#10b981", color: "white", border: "none", padding: "12px", borderRadius: "40px", fontWeight: "bold", width: "100%", marginTop: 20, cursor: "pointer" }}>
                 💾 Sauvegarder ce Modèle
               </button>

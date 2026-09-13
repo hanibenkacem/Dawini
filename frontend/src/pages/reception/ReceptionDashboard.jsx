@@ -56,8 +56,6 @@ const ThemeCtx = createContext({ C: LIGHT, dark: false, toggle: () => {} });
 const useTheme = () => useContext(ThemeCtx);
 
 // ─── GLOBALS ──────────────────────────────────────────────────────────────────
-// Scoped page CSS. Injected into <head> via useEffect and REMOVED on unmount,
-// so it never leaks into Login.jsx (or any other page) after logout.
 const MED_GLOBALS_CSS = `
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -193,10 +191,25 @@ function Modal({ title, subtitle, onClose, children }) {
   );
 }
 
+// ─── CONFIRM MODAL ─────────────────────────────────────────────────────────
+// Replaces window.confirm(). Native confirm() blocks the renderer and, in
+// Electron, focus doesn't reliably return to the DOM afterward.
+function ConfirmModal({ title = "Confirmation", message, confirmLabel = "Confirmer", danger = false, onConfirm, onCancel, loading }) {
+  const { C } = useTheme();
+  return (
+    <Modal title={title} onClose={onCancel}>
+      <p style={{ fontSize: 14, color: C.text, lineHeight: 1.6, marginBottom: 24 }}>{message}</p>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+        <Btn variant="ghost" onClick={onCancel} disabled={loading}>Annuler</Btn>
+        <Btn variant={danger ? "danger" : "primary"} onClick={onConfirm} disabled={loading}>
+          {loading ? "Veuillez patienter..." : confirmLabel}
+        </Btn>
+      </div>
+    </Modal>
+  );
+}
+
 // ─── EDIT PATIENT MODAL ─────────────────────────────────────────────────────
-// Lets reception fix a patient's info directly from the search results in
-// the "Ajouter à la file" modal — e.g. a typo made when the dossier was
-// first created. Same fields as the create form, prefilled from the row.
 function EditPatientModal({ patient, onClose, onSaved }) {
   const { C } = useTheme();
   const [form, setForm] = useState({
@@ -214,8 +227,8 @@ function EditPatientModal({ patient, onClose, onSaved }) {
   const set = (field, value) => setForm(f => ({ ...f, [field]: value }));
 
   const save = async () => {
-    if (!form.nom || !form.prenom || !form.telephone) {
-      setError("Nom, prénom et téléphone sont requis.");
+    if (!form.nom || !form.prenom) {
+      setError("Nom et prénom sont requis.");
       return;
     }
     setSaving(true); setError("");
@@ -287,7 +300,7 @@ function AddModal({ onClose, onAdded }) {
     catch (e) { setError(e.response?.data?.message || "Erreur lors de l'ajout."); setAdding(false); }
   };
   const createAndAdd = async () => {
-    if (!newPt.nom || !newPt.prenom || !newPt.telephone) { setError("Nom, prénom et téléphone sont requis."); return; }
+    if (!newPt.nom || !newPt.prenom) { setError("Nom et prénom sont requis."); return; }
     setAdding(true); setError("");
     try { const r = await axios.post(AJOUT_API, newPt, { headers: auth() }); await addToQueue(r.data.id); }
     catch (e) { setError(e.response?.data?.message || "Erreur création."); setAdding(false); }
@@ -498,6 +511,11 @@ export default function ReceptionDashboard() {
   const [dark, setDark]       = useState(() => localStorage.getItem("med-theme") === "dark");
   const [showAdd, setShowAdd] = useState(false);
 
+  // Pending queue-removal confirmation. Holds the patient's file-attente id,
+  // or null when closed. Replaces window.confirm().
+  const [pendingRemoveId, setPendingRemoveId] = useState(null);
+  const [removing, setRemoving] = useState(false);
+
   // Queue data, polling, sounds, and the payment alert modal are all owned by
   // QueueAlertProvider now (mounted in MainLayout) — this component just
   // reads the shared state so it survives navigating away and back.
@@ -516,13 +534,22 @@ export default function ReceptionDashboard() {
     return () => window.removeEventListener("med-theme-change", handler);
   }, []);
 
-  const handleDelete = async (id) => {
-    if (!window.confirm("Retirer ce patient de la file d'attente ?")) return;
+  // Opens the confirm modal instead of window.confirm().
+  const handleDelete = (id) => {
+    setPendingRemoveId(id);
+  };
+
+  const confirmRemove = async () => {
+    if (!pendingRemoveId) return;
+    setRemoving(true);
     try {
-      await axios.delete(`${API}/${id}`, { headers: auth() });
+      await axios.delete(`${API}/${pendingRemoveId}`, { headers: auth() });
       fetchQueue();
     } catch (e) {
       console.error("Erreur suppression:", e);
+    } finally {
+      setRemoving(false);
+      setPendingRemoveId(null);
     }
   };
 
@@ -687,6 +714,18 @@ export default function ReceptionDashboard() {
       </div>
 
       {showAdd && <AddModal onClose={() => setShowAdd(false)} onAdded={fetchQueue} />}
+
+      {pendingRemoveId && (
+        <ConfirmModal
+          title="Retirer de la file d'attente"
+          message="Retirer ce patient de la file d'attente ?"
+          confirmLabel="Retirer"
+          danger
+          loading={removing}
+          onConfirm={confirmRemove}
+          onCancel={() => setPendingRemoveId(null)}
+        />
+      )}
 
     </ThemeCtx.Provider>
   );

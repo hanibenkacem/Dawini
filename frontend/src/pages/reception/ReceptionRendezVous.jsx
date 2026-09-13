@@ -149,8 +149,44 @@ function Modal({ title, subtitle, onClose, children }) {
   );
 }
 
+// ─── CONFIRM MODAL ─────────────────────────────────────────────────────────
+// Replaces window.confirm(). Native confirm() blocks the renderer and, in
+// Electron, focus doesn't reliably return to the DOM afterward — that's what
+// caused inputs to appear "frozen" post-click. This is a normal React modal.
+function ConfirmModal({ title = "Confirmation", message, confirmLabel = "Confirmer", danger = false, onConfirm, onCancel, loading }) {
+  const { C } = useTheme();
+  return (
+    <Modal title={title} onClose={onCancel}>
+      <p style={{ fontSize: 14, color: C.text, lineHeight: 1.6, marginBottom: 24 }}>{message}</p>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+        <Btn variant="ghost" onClick={onCancel} disabled={loading}>Annuler</Btn>
+        <Btn variant={danger ? "danger" : "primary"} onClick={onConfirm} disabled={loading}>
+          {loading ? "Veuillez patienter..." : confirmLabel}
+        </Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// Simple prev/next pager used for the patient search results list.
+function Pager({ page, pageCount, onPrev, onNext }) {
+  const { C } = useTheme();
+  if (pageCount <= 1) return null;
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4, marginBottom: 12 }}>
+      <Btn variant="ghost" size="sm" onClick={onPrev} disabled={page === 0}>← Précédent</Btn>
+      <span style={{ fontSize: 12, color: C.textSoft, fontWeight: 600 }}>
+        Page {page + 1} / {pageCount}
+      </span>
+      <Btn variant="ghost" size="sm" onClick={onNext} disabled={page >= pageCount - 1}>Suivant →</Btn>
+    </div>
+  );
+}
+
 // ─── CREATE APPOINTMENT MODAL ─────────────────────────────────────────────────
 // Steps: "search" → "create" (new patient form) → "details" (RDV form)
+const SEARCH_PAGE_SIZE = 5;
+
 function CreateAppointmentModal({ onClose, onCreated }) {
   const { C } = useTheme();
 
@@ -161,6 +197,7 @@ function CreateAppointmentModal({ onClose, onCreated }) {
   const [step, setStep]                       = useState("search");
   const [query, setQuery]                     = useState("");
   const [results, setResults]                 = useState([]);
+  const [resultsPage, setResultsPage]         = useState(0);
   const [searching, setSearching]             = useState(false);
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [doctors, setDoctors]                 = useState([]);
@@ -192,12 +229,13 @@ function CreateAppointmentModal({ onClose, onCreated }) {
   }, [isDoctor]);
 
   const doSearch = async (q) => {
-    if (!q.trim()) { setResults([]); return; }
+    if (!q.trim()) { setResults([]); setResultsPage(0); return; }
     setSearching(true);
     try {
       const res = await axios.get(`${PAT_SEARCH_API}?q=${encodeURIComponent(q)}`, { headers: auth() });
       setResults(res.data);
-    } catch { setResults([]); }
+      setResultsPage(0); // reset to page 1 on every new search
+    } catch { setResults([]); setResultsPage(0); }
     setSearching(false);
   };
 
@@ -206,6 +244,9 @@ function CreateAppointmentModal({ onClose, onCreated }) {
     clearTimeout(debRef.current);
     debRef.current = setTimeout(() => doSearch(val), 350);
   };
+
+  const pageCount   = Math.max(1, Math.ceil(results.length / SEARCH_PAGE_SIZE));
+  const pagedResults = results.slice(resultsPage * SEARCH_PAGE_SIZE, resultsPage * SEARCH_PAGE_SIZE + SEARCH_PAGE_SIZE);
 
   // Create new patient then go straight to RDV details
   const handleCreatePatient = async () => {
@@ -269,28 +310,38 @@ function CreateAppointmentModal({ onClose, onCreated }) {
         {searching && <p style={{ color: C.textSoft, fontSize: 13, textAlign: "center", marginBottom: 12 }}>Recherche...</p>}
 
         {results.length > 0 && (
-          <div style={{ marginBottom: 16, display: "flex", flexDirection: "column", gap: 8 }}>
-            {results.map(p => (
-              <div key={p.id} onClick={() => { setSelectedPatient(p); setStep("details"); }}
-                style={{ padding: "12px 16px", borderRadius: 12, cursor: "pointer", border: `1.5px solid ${C.border}`, background: C.surfaceAlt, display: "flex", justifyContent: "space-between", alignItems: "center", transition: "all .15s" }}
-                onMouseOver={e => { e.currentTarget.style.borderColor = C.teal; e.currentTarget.style.background = C.tealLight; }}
-                onMouseOut={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.background = C.surfaceAlt; }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <div style={{ width: 38, height: 38, borderRadius: 10, background: C.slateLight, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 14, color: C.textSoft }}>
-                    {p.nom?.[0]}{p.prenom?.[0]}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ maxHeight: 300, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, paddingRight: 2 }}>
+              {pagedResults.map(p => (
+                <div key={p.id} onClick={() => { setSelectedPatient(p); setStep("details"); }}
+                  style={{ padding: "12px 16px", borderRadius: 12, cursor: "pointer", border: `1.5px solid ${C.border}`, background: C.surfaceAlt, display: "flex", justifyContent: "space-between", alignItems: "center", transition: "all .15s" }}
+                  onMouseOver={e => { e.currentTarget.style.borderColor = C.teal; e.currentTarget.style.background = C.tealLight; }}
+                  onMouseOut={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.background = C.surfaceAlt; }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <div style={{ width: 38, height: 38, borderRadius: 10, background: C.slateLight, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 14, color: C.textSoft }}>
+                      {p.nom?.[0]}{p.prenom?.[0]}
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: C.text }}>{p.nom} {p.prenom}</div>
+                      <div style={{ fontSize: 12, color: C.textSoft }}>📞 {p.telephone}</div>
+                    </div>
                   </div>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: C.text }}>{p.nom} {p.prenom}</div>
-                    <div style={{ fontSize: 12, color: C.textSoft }}>📞 {p.telephone}</div>
-                  </div>
+                  <span style={{ color: C.teal, fontSize: 18 }}>→</span>
                 </div>
-                <span style={{ color: C.teal, fontSize: 18 }}>→</span>
-              </div>
-            ))}
+              ))}
+            </div>
+
+            <Pager
+              page={resultsPage}
+              pageCount={pageCount}
+              onPrev={() => setResultsPage(p => Math.max(0, p - 1))}
+              onNext={() => setResultsPage(p => Math.min(pageCount - 1, p + 1))}
+            />
+
             {/* Allow creating even when results exist */}
             <button onClick={() => { setError(""); setStep("create"); }}
-              style={{ background: "none", border: "none", color: C.teal, cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: "'Plus Jakarta Sans', sans-serif", textAlign: "right", padding: "4px 0" }}>
+              style={{ background: "none", border: "none", color: C.teal, cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: "'Plus Jakarta Sans', sans-serif", textAlign: "right", padding: "4px 0", display: "block", width: "100%" }}>
               + Créer un nouveau dossier
             </button>
           </div>
@@ -436,6 +487,10 @@ export default function RendezvousPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [actionLoading, setActionLoading]     = useState(false);
 
+  // Pending confirmation for cancelling a rendez-vous. Holds the id, or null
+  // when no confirmation is open. Replaces window.confirm().
+  const [confirmCancelId, setConfirmCancelId] = useState(null);
+
   const [pastOffset, setPastOffset]   = useState(0);
   const [pastHasMore, setPastHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -517,15 +572,23 @@ export default function RendezvousPage() {
 
   const isToday = (dateStr) => new Date(dateStr).toDateString() === new Date().toDateString();
 
-  const cancelAppointment = async (id) => {
-    if (!window.confirm("Annuler ce rendez-vous ?")) return;
+  // Opens the confirmation modal instead of window.confirm().
+  const requestCancelAppointment = (id) => setConfirmCancelId(id);
+
+  // Runs after the user confirms in the modal.
+  const confirmCancelAppointment = async () => {
+    const id = confirmCancelId;
+    if (!id) return;
     setActionLoading(true);
     try {
       await axios.delete(`${RDV_API}/${id}`, { headers: auth() });
       refresh();
     } catch (err) {
       alert(err.response?.data?.message || "Erreur lors de l'annulation");
-    } finally { setActionLoading(false); }
+    } finally {
+      setActionLoading(false);
+      setConfirmCancelId(null);
+    }
   };
 
   const checkInAppointment = async (id) => {
@@ -595,7 +658,7 @@ export default function RendezvousPage() {
                             <Btn variant="success" size="sm" onClick={() => checkInAppointment(apt.id)} disabled={actionLoading}>Marquer arrivé</Btn>
                           )}
                           {apt.statut === "planifie" && (
-                            <Btn variant="danger" size="sm" onClick={() => cancelAppointment(apt.id)} disabled={actionLoading}>Annuler</Btn>
+                            <Btn variant="danger" size="sm" onClick={() => requestCancelAppointment(apt.id)} disabled={actionLoading}>Annuler</Btn>
                           )}
                           {apt.statut === "arrive"       && <span style={{ fontSize: 12, color: C.amber, fontWeight: 600 }}>En attente de consultation</span>}
                           {apt.statut === "termine"      && <span style={{ fontSize: 12, color: C.green, fontWeight: 600 }}>✓ Consulté</span>}
@@ -623,6 +686,18 @@ export default function RendezvousPage() {
         <CreateAppointmentModal
           onClose={() => setShowCreateModal(false)}
           onCreated={refresh}
+        />
+      )}
+
+      {confirmCancelId && (
+        <ConfirmModal
+          title="Annuler le rendez-vous"
+          message="Êtes-vous sûr de vouloir annuler ce rendez-vous ? Cette action est irréversible."
+          confirmLabel="Oui, annuler"
+          danger
+          loading={actionLoading}
+          onConfirm={confirmCancelAppointment}
+          onCancel={() => setConfirmCancelId(null)}
         />
       )}
     </ThemeCtx.Provider>

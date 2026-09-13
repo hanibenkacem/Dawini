@@ -223,6 +223,54 @@ function EditModal({ C, onClose, onSave, editData, saving }) {
   );
 }
 
+// ─── CONFIRM DELETE MODAL ─────────────────────────────────────────────────────
+// Replaces window.confirm(). Native confirm() blocks the renderer and, in
+// Electron, focus doesn't reliably return to the DOM afterward.
+function ConfirmDeleteModal({ C, onClose, onConfirm, deleting }) {
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        zIndex: 250, backdropFilter: "blur(3px)", padding: "16px",
+      }}
+      onClick={e => e.target === e.currentTarget && !deleting && onClose()}
+    >
+      <div style={{
+        background: C.surface, borderRadius: 18, padding: "26px 24px",
+        width: "100%", maxWidth: 400,
+        boxShadow: `0 20px 60px ${C.shadowMd}`,
+        border: `1px solid ${C.border}`,
+        animation: "modalIn .2s cubic-bezier(.34,1.56,.64,1)",
+        fontFamily: "'Plus Jakarta Sans', sans-serif",
+      }}>
+        <div style={{ fontWeight: 800, fontSize: 16, color: C.text, marginBottom: 10 }}>
+          Supprimer ce paiement ?
+        </div>
+        <p style={{ fontSize: 13, color: C.textSoft, lineHeight: 1.6, marginBottom: 22 }}>
+          Cette action est irréversible.
+        </p>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={onClose} disabled={deleting} style={{
+            flex: 1, padding: "10px 0", borderRadius: 10,
+            border: `1px solid ${C.border}`, background: "transparent",
+            color: C.textSoft, fontWeight: 600, fontSize: 13,
+            cursor: "pointer", fontFamily: "'Plus Jakarta Sans', sans-serif",
+          }}>Annuler</button>
+          <button onClick={onConfirm} disabled={deleting} style={{
+            flex: 1, padding: "10px 0", borderRadius: 10, border: "none",
+            background: C.red, color: "#fff", fontWeight: 700, fontSize: 13,
+            cursor: deleting ? "not-allowed" : "pointer",
+            fontFamily: "'Plus Jakarta Sans', sans-serif",
+          }}>
+            {deleting ? "Suppression…" : "Supprimer"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── RECEIPT MODAL ────────────────────────────────────────────────────────────
 function ReceiptModal({ payment, C, onClose }) {
   const today = new Date().toLocaleDateString("fr-DZ", { day: "2-digit", month: "long", year: "numeric" });
@@ -437,6 +485,7 @@ export default function ReceptionPaiements() {
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState(null);
   const [saving, setSaving]     = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const [searchInput, setSearchInput]   = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -446,6 +495,10 @@ export default function ReceptionPaiements() {
   const [editData, setEditData]         = useState(null);
   const [sortKey, setSortKey]           = useState("date");
   const [sortDir, setSortDir]           = useState("desc");
+
+  // Pending delete confirmation. Holds the payment id, or null when closed.
+  // Replaces window.confirm().
+  const [pendingDeleteId, setPendingDeleteId] = useState(null);
 
   const searchTimeoutRef = useRef(null);
 
@@ -522,12 +575,19 @@ export default function ReceptionPaiements() {
       .catch(e => { console.error(e); alert("Erreur lors de l'enregistrement."); setSaving(false); });
   }
 
+  // Opens the confirm modal instead of window.confirm().
   function handleDelete(id) {
-    if (!window.confirm("Supprimer ce paiement ?")) return;
-    fetch(`${API}/paiements/${id}`, { method: "DELETE" })
+    setPendingDeleteId(id);
+  }
+
+  function confirmDelete() {
+    if (!pendingDeleteId) return;
+    setDeleting(true);
+    fetch(`${API}/paiements/${pendingDeleteId}`, { method: "DELETE" })
       .then(r => { if (!r.ok) throw new Error(); return r.json(); })
       .then(() => { fetchPayments(); fetchStats(); })
-      .catch(() => alert("Erreur lors de la suppression."));
+      .catch(() => alert("Erreur lors de la suppression."))
+      .finally(() => { setDeleting(false); setPendingDeleteId(null); });
   }
 
   const SortIcon = ({ col }) => (
@@ -781,6 +841,14 @@ export default function ReceptionPaiements() {
       )}
       {showReceipt && (
         <ReceiptModal payment={showReceipt} C={C} onClose={()=>setShowReceipt(null)} />
+      )}
+      {pendingDeleteId && (
+        <ConfirmDeleteModal
+          C={C}
+          deleting={deleting}
+          onClose={() => { if (!deleting) setPendingDeleteId(null); }}
+          onConfirm={confirmDelete}
+        />
       )}
     </>
   );

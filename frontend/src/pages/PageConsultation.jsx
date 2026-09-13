@@ -15,6 +15,9 @@ const LIGHT = {
   teal: "#0E7490",
   tealMid: "#06B6D4",
   shadow: "rgba(15,41,66,0.07)",
+  red: "#DC2626",
+  redLight: "#FEE2E2",
+  slateLight: "#F1F5F9",
 };
 
 const DARK = {
@@ -26,15 +29,94 @@ const DARK = {
   teal: "#22D3EE",
   tealMid: "#06B6D4",
   shadow: "rgba(0,0,0,0.3)",
+  red: "#F87171",
+  redLight: "#450A0A",
+  slateLight: "#1E2B3E",
 };
 
 const PAGE_SIZE = 10;
+
+// Replaces window.confirm(). Native confirm() blocks the renderer and, in
+// Electron, focus doesn't reliably return to the DOM/inputs afterward.
+function ConfirmDeleteModal({ label, onConfirm, onCancel, C }) {
+  return (
+    <div
+      onClick={onCancel}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1000,
+        background: "rgba(0,0,0,0.55)",
+        backdropFilter: "blur(8px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: C.surface,
+          borderRadius: 16,
+          width: "min(440px, 92vw)",
+          border: `1px solid ${C.border}`,
+          boxShadow: `0 24px 64px ${C.shadow}`,
+          padding: "24px 26px",
+        }}
+      >
+        <div style={{ fontWeight: 800, fontSize: 16, color: C.text, marginBottom: 10 }}>
+          Supprimer définitivement ce dossier ?
+        </div>
+        <p style={{ fontSize: 13.5, color: C.textSoft, lineHeight: 1.6, marginBottom: 22 }}>
+          Le dossier de <strong style={{ color: C.text }}>{label}</strong> sera supprimé
+          ainsi que toutes ses consultations, rendez-vous et files d'attente associés.
+          Cette action est irréversible.
+        </p>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+          <button
+            onClick={onCancel}
+            style={{
+              background: C.slateLight,
+              color: C.text,
+              border: "none",
+              padding: "9px 18px",
+              borderRadius: 10,
+              fontWeight: 700,
+              fontSize: 13,
+              cursor: "pointer",
+            }}
+          >
+            Annuler
+          </button>
+          <button
+            onClick={onConfirm}
+            style={{
+              background: C.red,
+              color: "#fff",
+              border: "none",
+              padding: "9px 18px",
+              borderRadius: 10,
+              fontWeight: 700,
+              fontSize: 13,
+              cursor: "pointer",
+            }}
+          >
+            Supprimer définitivement
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function MedecinDashboard() {
   const [openModal, setOpenModal] = useState(false);
   const [patients, setPatients] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [search, setSearch] = useState("");
+
+  // Pending delete confirmation. null when no modal is open.
+  const [pendingDelete, setPendingDelete] = useState(null); // { id, label }
 
   const { dark } = useOutletContext();
   const C = dark ? DARK : LIGHT;
@@ -57,22 +139,26 @@ export default function MedecinDashboard() {
   };
 
   // Doctor-only permanent delete (patient + all consultations/rendez_vous/
-  // file_attente — see backend DeletePatient). Simple confirm is enough per
-  // spec, no name-typing step.
-  const handleDeletePatient = async (patientId, patientLabel) => {
-    const ok = window.confirm(
-      `Supprimer définitivement le dossier de ${patientLabel} ? Cette action est irréversible et supprimera aussi ses consultations.`
-    );
-    if (!ok) return;
+  // file_attente — see backend DeletePatient). Opens the confirm modal
+  // instead of window.confirm().
+  const handleDeletePatient = (patientId, patientLabel) => {
+    setPendingDelete({ id: patientId, label: patientLabel });
+  };
+
+  const confirmDeletePatient = async () => {
+    if (!pendingDelete) return;
+    const { id } = pendingDelete;
     try {
       const token = localStorage.getItem("token");
-      await axios.delete(`${API_BASE}/patient/delete/${patientId}`, {
+      await axios.delete(`${API_BASE}/patient/delete/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       fetchPatients();
     } catch (err) {
       console.error("Erreur lors de la suppression du patient", err);
       alert(err.response?.data?.message || "Erreur lors de la suppression du patient.");
+    } finally {
+      setPendingDelete(null);
     }
   };
 
@@ -332,6 +418,15 @@ export default function MedecinDashboard() {
         onSuccess={fetchPatients}
         isDark={dark}
       />
+
+      {pendingDelete && (
+        <ConfirmDeleteModal
+          label={pendingDelete.label}
+          onConfirm={confirmDeletePatient}
+          onCancel={() => setPendingDelete(null)}
+          C={C}
+        />
+      )}
     </div>
   );
 }
