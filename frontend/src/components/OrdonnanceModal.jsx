@@ -47,6 +47,10 @@ const OrdonnanceModal = ({
   // DEFAULT_TEMPLATE_ID if this ends up undefined too.
   const resolvedTemplateId = templateId || doctorSettings.template;
 
+  // doctorSettings.mode_simplifie comes back from MySQL as 0/1 (TINYINT),
+  // so coerce it to a real boolean before handing it to OrdonnanceDocument.
+  const resolvedSimplified = !!doctorSettings.mode_simplifie;
+
   const showToast = (type, message, duration = 4000) => {
     setToast({ type, message });
     clearTimeout(showToast._t);
@@ -179,6 +183,7 @@ const OrdonnanceModal = ({
             docType={docType}
             certificate={certificate}
             templateId={resolvedTemplateId}
+            simplified={resolvedSimplified}
           />
         </div>
       </div>

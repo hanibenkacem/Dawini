@@ -141,9 +141,16 @@ const doctorNameStyle = (primaryText, secondaryText, fontFamily, maxWidthPx) => 
  * Shared A5 document renderer. Templates control which header blocks show
  * (logo, Arabic doctor name) via theme.showLogo / theme.showArabicName —
  * everything else (fonts, body layout, emojis) is identical across templates.
+ *
+ * `simplified` strips the decorative/optional bits some doctors don't want:
+ * the 👤/📅 icons in the patient info bar, the "💊 Traitement prescrit :"
+ * heading above the medication list, the "Durée" / "Renouvellements"
+ * footer lines, the Arabic dosage-reminder note under the footer, and the
+ * colored number badges next to each medication (replaced with a plain
+ * dark-outline badge — same shape, no colored fill).
  */
 const OrdonnanceDocument = forwardRef(function OrdonnanceDocument(
-  { doctor, patient, medicaments, note, docType = "ordonnance", certificate, templateId },
+  { doctor, patient, medicaments, note, docType = "ordonnance", certificate, templateId, simplified = false },
   ref
 ) {
   const theme = getTemplate(templateId).theme;
@@ -215,21 +222,23 @@ const OrdonnanceDocument = forwardRef(function OrdonnanceDocument(
         {/* Patient info */}
         <div style={{ backgroundColor: "#f8fafc", padding: "8px 12px", borderRadius: "12px", margin: "12px 0", border: `1px solid ${theme.border}`, fontSize: "9pt" }}>
           <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "6px" }}>
-            <div><strong>👤 Patient :</strong> {patient.prenomFr} {patient.nomFr}</div>
+            <div><strong>{!simplified && "👤 "}Patient :</strong> {patient.prenomFr} {patient.nomFr}</div>
             {(patient.prenomAr || patient.nomAr) && (
               <div style={{ textAlign: "right", direction: "rtl" }}><strong>المريض :</strong> {patient.prenomAr} {patient.nomAr}</div>
             )}
-            <div><strong>Âge :</strong> {patient.age} ans</div>
-            <div><strong>📅 Le :</strong> {patient.date}</div>
+            <div><strong>Age :</strong> {patient.age} ans</div>
+            <div><strong>{!simplified && "📅 "}Le :</strong> {patient.date}</div>
           </div>
         </div>
 
         {/* Body */}
         {docType === "ordonnance" ? (
           <div style={{ margin: "16px 0", minHeight: "250px" }}>
-            <div style={{ borderLeft: `3px solid ${theme.primary}`, paddingLeft: "10px", marginBottom: "14px" }}>
-              <h4 style={{ margin: 0, fontSize: "11pt" }}>💊 Traitement prescrit :</h4>
-            </div>
+            {!simplified && (
+              <div style={{ borderLeft: `3px solid ${theme.primary}`, paddingLeft: "10px", marginBottom: "14px" }}>
+                <h4 style={{ margin: 0, fontSize: "11pt" }}>💊 Traitement prescrit :</h4>
+              </div>
+            )}
             {medicaments ? (
               <div style={{ paddingLeft: "2px" }}>
                 {(() => {
@@ -251,12 +260,22 @@ const OrdonnanceDocument = forwardRef(function OrdonnanceDocument(
                         }}
                       >
                         <span
-                          style={{
-                            minWidth: `${s.badge}px`, height: `${s.badge}px`, background: theme.primary,
-                            color: "#ffffff", borderRadius: "6px", display: "flex", alignItems: "center",
-                            justifyContent: "center", fontSize: s.badgeFont, fontWeight: 700, flexShrink: 0,
-                            marginTop: "1px", fontFamily: "Arial, sans-serif",
-                          }}
+                          style={
+                            simplified
+                              ? {
+                                  minWidth: `${s.badge}px`, height: `${s.badge}px`, background: "transparent",
+                                  color: "#111827", border: "1px solid #111827", borderRadius: "4px",
+                                  display: "flex", alignItems: "center", justifyContent: "center",
+                                  fontSize: s.badgeFont, fontWeight: 700, flexShrink: 0, marginTop: "1px",
+                                  fontFamily: theme.fontFamily, boxSizing: "border-box",
+                                }
+                              : {
+                                  minWidth: `${s.badge}px`, height: `${s.badge}px`, background: theme.primary,
+                                  color: "#ffffff", borderRadius: "6px", display: "flex", alignItems: "center",
+                                  justifyContent: "center", fontSize: s.badgeFont, fontWeight: 700, flexShrink: 0,
+                                  marginTop: "1px", fontFamily: "Arial, sans-serif",
+                                }
+                          }
                         >
                           {i + 1}
                         </span>
@@ -356,8 +375,8 @@ const OrdonnanceDocument = forwardRef(function OrdonnanceDocument(
         )}
 
         {/* Footer */}
-        <div style={{ marginTop: "20px", borderTop: `1px dashed ${theme.border}`, paddingTop: "12px", display: "flex", justifyContent: docType === "ordonnance" ? "space-between" : "flex-end", fontSize: "8pt" }}>
-          {docType === "ordonnance" && (
+        <div style={{ marginTop: "20px", borderTop: `1px dashed ${theme.border}`, paddingTop: "12px", display: "flex", justifyContent: docType === "ordonnance" && !simplified ? "space-between" : "flex-end", fontSize: "8pt" }}>
+          {docType === "ordonnance" && !simplified && (
             <div>
               <p style={{ margin: "2px 0" }}>Durée : ___________</p>
               <p style={{ margin: "2px 0" }}>Renouvellements : ___________</p>
@@ -370,7 +389,7 @@ const OrdonnanceDocument = forwardRef(function OrdonnanceDocument(
           </div>
         </div>
 
-        {docType === "ordonnance" && (
+        {docType === "ordonnance" && !simplified && (
           <div style={{ textAlign: "center", fontSize: "7pt", color: "#6b7280", marginTop: "10px", direction: "rtl" }}>
             يرجى احترام الجرعات الموصوفة — وصفة طبية صالحة لمدة 30 يومًا
           </div>

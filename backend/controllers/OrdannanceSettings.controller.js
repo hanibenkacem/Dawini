@@ -9,6 +9,9 @@ exports.SaveOrdonnance = (req, res) => {
     const { nom_medecin, nom_medecin_ar, specialite, adresse, telephone, template } = req.body;
     const id_medecin = req.user.userId;
 
+    // Sent from the frontend as FormData strings, e.g. "true"
+    const modeSimplifie = req.body.mode_simplifie === 'true';
+
     // Get filenames from multer (new uploads, if any)
     const newLogo = req.files['logo'] ? req.files['logo'][0].filename : null;
     const newBackground = req.files['background'] ? req.files['background'][0].filename : null;
@@ -36,8 +39,8 @@ exports.SaveOrdonnance = (req, res) => {
 
             const sql = `
                 INSERT INTO ordonnance_settings 
-                (id_medecin, nom_medecin, nom_medecin_ar, specialite, adresse, telephone, logo, background, template)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id_medecin, nom_medecin, nom_medecin_ar, specialite, adresse, telephone, logo, background, template, mode_simplifie)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE
                 nom_medecin = VALUES(nom_medecin),
                 nom_medecin_ar = VALUES(nom_medecin_ar),
@@ -46,11 +49,12 @@ exports.SaveOrdonnance = (req, res) => {
                 telephone = VALUES(telephone),
                 logo = VALUES(logo),
                 background = VALUES(background),
-                template = VALUES(template)`;
+                template = VALUES(template),
+                mode_simplifie = VALUES(mode_simplifie)`;
 
             const values = [
                 id_medecin, nom_medecin, nom_medecin_ar, specialite, adresse, telephone,
-                finalLogo, finalBackground, template || 'classic'
+                finalLogo, finalBackground, template || 'classic', modeSimplifie
             ];
 
             db.query(sql, values, (err2, result) => {

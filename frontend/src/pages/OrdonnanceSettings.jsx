@@ -36,6 +36,12 @@ export default function OrdonnancePage() {
     template: DEFAULT_TEMPLATE_ID,
   });
 
+  // Strips the decorative bits from the printed document: the 👤/📅 icons in
+  // the patient info bar, the "💊 Traitement prescrit :" heading, the
+  // "Durée" / "Renouvellements" footer lines, and the Arabic dosage note.
+  // Persisted per-doctor via ordonnance-settings, like the template choice.
+  const [simplified, setSimplified] = useState(false);
+
   // Tracks whether the user explicitly removed a previously-saved logo/background,
   // so we can tell the backend to actually delete it on save (rather than just
   // "no new file was selected, keep the old one").
@@ -77,6 +83,7 @@ export default function OrdonnancePage() {
             background: result.background ? `${API_BASE}/uploads/${result.background}` : "",
             template: result.template || DEFAULT_TEMPLATE_ID,
           }));
+          setSimplified(!!result.mode_simplifie);
           setRemoveLogo(false);
           setRemoveBackground(false);
         }
@@ -95,6 +102,7 @@ export default function OrdonnancePage() {
     formData.append("adresse", data.adresse);
     formData.append("telephone", data.telephone);
     formData.append("template", data.template);
+    formData.append("mode_simplifie", simplified ? "true" : "false");
 
     if (logoInputRef.current?.files[0]) {
       formData.append("logo", logoInputRef.current.files[0]);
@@ -270,6 +278,28 @@ export default function OrdonnancePage() {
                   </label>
                 ))}
               </div>
+
+              <label
+                style={{
+                  display: "flex", alignItems: "center", gap: "10px", padding: "10px 12px",
+                  borderRadius: "12px", cursor: "pointer", marginTop: "10px",
+                  border: `2px solid ${simplified ? "#1e3a5f" : "#e2e8f0"}`,
+                  background: simplified ? "#f8fafc" : "white",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={simplified}
+                  onChange={(e) => setSimplified(e.target.checked)}
+                />
+                <span>
+                  <strong style={{ fontSize: "0.9rem" }}>Mode simplifié</strong>
+                  <br />
+                  <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                    Retire les icônes patient/date, le titre « Traitement prescrit », les lignes Durée/Renouvellements et la mention en arabe.
+                  </span>
+                </span>
+              </label>
             </div>
 
             <div style={{ marginBottom: "28px" }}>
@@ -359,6 +389,7 @@ export default function OrdonnancePage() {
             note={additionalInstructions}
             docType="ordonnance"
             templateId={data.template}
+            simplified={simplified}
           />
         </div>
       </div>

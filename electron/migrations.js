@@ -32,6 +32,12 @@ async function runMigrations(creds) {
       'template',
       "VARCHAR(30) NOT NULL DEFAULT 'classic'"
     );
+    await ensureColumnExists(
+      connection,
+      'ordonnance_settings',
+      'mode_simplifie',
+      "TINYINT(1) NOT NULL DEFAULT 0"
+    );
     // future migrations get appended here
   } finally {
     await connection.end();
