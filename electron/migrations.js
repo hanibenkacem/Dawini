@@ -16,6 +16,36 @@ async function ensureColumnExists(connection, table, column, definition) {
   return true;
 }
 
+async function ensureForeignKeyCascade(connection, table, constraintName, column, refTable, refColumn, onDelete = 'CASCADE') {
+  const [rows] = await connection.query(
+    `SELECT DELETE_RULE
+     FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS
+     WHERE CONSTRAINT_SCHEMA = DATABASE()
+       AND TABLE_NAME = ?
+       AND CONSTRAINT_NAME = ?`,
+    [table, constraintName]
+  );
+
+  if (rows.length > 0 && rows[0].DELETE_RULE === onDelete) {
+    return false; // already correct, nothing to do
+  }
+
+  if (rows.length > 0) {
+    // constraint exists but with wrong ON DELETE rule -> drop it first
+    await connection.query(`ALTER TABLE \`${table}\` DROP FOREIGN KEY \`${constraintName}\``);
+  }
+
+  await connection.query(
+    `ALTER TABLE \`${table}\`
+     ADD CONSTRAINT \`${constraintName}\`
+     FOREIGN KEY (\`${column}\`) REFERENCES \`${refTable}\` (\`${refColumn}\`)
+     ON DELETE ${onDelete}`
+  );
+
+  console.log(`[migrations] set ${table}.${constraintName} ON DELETE ${onDelete}`);
+  return true;
+}
+
 async function runMigrations(creds) {
   const connection = await mysql.createConnection({
     host: '127.0.0.1',
@@ -37,6 +67,25 @@ async function runMigrations(creds) {
       'ordonnance_settings',
       'mode_simplifie',
       "TINYINT(1) NOT NULL DEFAULT 0"
+    );
+
+    await ensureForeignKeyCascade(
+      connection,
+      'rendez_vous',
+      'rendez_vous_ibfk_1',
+      'patient_id',
+      'patients',
+      'id',
+      'CASCADE'
+    );
+    await ensureForeignKeyCascade(
+      connection,
+      'file_attente',
+      'file_attente_ibfk_2',
+      'rdv_id',
+      'rendez_vous',
+      'id',
+      'CASCADE'
     );
     // future migrations get appended here
   } finally {

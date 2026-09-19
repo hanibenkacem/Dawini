@@ -1,6 +1,6 @@
 {
   "name": "medical-cabinet",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "main": "electron/main.js",
   "scripts": {
     "react": "cd frontend && npm run dev",

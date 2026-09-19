@@ -77,6 +77,8 @@ function readAndDecrypt(filePath) {
     const plain = safeStorage.decryptString(encrypted);
     return JSON.parse(plain);
   } catch (err) {
+      console.error('license decrypt failed:', err.message);
+
     // Corrupted / tampered / undecryptable -> treat as absent.
     return null;
   }
@@ -194,6 +196,7 @@ function findTrialMarkerForMachine(machineIdHash) {
   forThisMachine.sort((a, b) => new Date(a.startedAt) - new Date(b.startedAt));
   return forThisMachine[0];
 }
+
 
 module.exports = {
   saveLicense,
