@@ -149,6 +149,9 @@ function createWindow() {
 }
 
 // ── Auto-updater ─────────────────────────────────────────────────────────
+// Flow: updates download automatically in the background, but are only
+// installed when the user clicks "Redémarrer et installer" (update:install-now).
+// Closing the app never installs an update.
 function initAutoUpdater() {
   if (isDev) {
     log('Dev mode — skipping auto-updater');
@@ -156,6 +159,9 @@ function initAutoUpdater() {
   }
 
   autoUpdater.logger = { info: log, warn: log, error: log, debug: () => {} };
+
+  autoUpdater.autoDownload = true;           // download in the background
+  autoUpdater.autoInstallOnAppQuit = false;  // never install just because the app closed
 
   autoUpdater.on('checking-for-update', () => {
     log('Checking for update...');
@@ -196,13 +202,26 @@ function initAutoUpdater() {
     });
   });
 
+  // Errors are logged but kept out of the UI (e.g. offline clinic PCs would
+  // otherwise show an error banner every check). A finished download is preserved.
   autoUpdater.on('error', (err) => {
     log('Auto-updater error: ' + err.stack);
-    sendUpdateStatus({ status: 'error', message: err.message });
+    if (lastUpdateStatus.status !== 'downloaded') {
+      sendUpdateStatus({ status: 'idle' });
+    }
   });
 
-  autoUpdater.checkForUpdatesAndNotify();
-  setInterval(() => autoUpdater.checkForUpdatesAndNotify(), 4 * 60 * 60 * 1000);
+  const checkForUpdates = () => {
+    // Don't re-check while a download is running or an update is already
+    // waiting to be installed — avoids the banner flickering back to 0%.
+    if (['available', 'downloaded'].includes(lastUpdateStatus.status)) return;
+    autoUpdater.checkForUpdates().catch((err) => {
+      log('Update check failed: ' + err.message);
+    });
+  };
+
+  checkForUpdates();
+  setInterval(checkForUpdates, 4 * 60 * 60 * 1000);
 }
 
 app.whenReady().then(async () => {
@@ -253,9 +272,11 @@ ipcMain.on('update:get-status-sync', (event) => {
   event.returnValue = lastUpdateStatus;
 });
 
-ipcMain.on('update:install-now', () => {
+ipcMain.on('update:install-now', async () => {
   log('User triggered install-now, quitting and installing update');
-  autoUpdater.quitAndInstall();
+  // Stop MySQL first so the installer doesn't hit locked files
+  try { await stopMysqld(); } catch (err) { log('stopMysqld failed: ' + err.message); }
+  autoUpdater.quitAndInstall(false, true); // (isSilent, forceRunAfter)
 });
 
 ipcMain.handle('print-html', (_event, html) => {

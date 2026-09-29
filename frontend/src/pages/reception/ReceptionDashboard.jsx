@@ -11,6 +11,8 @@ const EDIT_API  = `${API_BASEE}/patient/edit`;
 const PAT_API   = `${API_BASEE}/file-attente/patient-search`;
 const RDV_API   = `${API_BASEE}/rendez-vous`;
 
+const SEARCH_PAGE_SIZE = 5;
+
 const token = () => localStorage.getItem("token");
 const auth  = () => ({ Authorization: `Bearer ${token()}` });
 
@@ -274,6 +276,9 @@ function AddModal({ onClose, onAdded }) {
   const { C } = useTheme();
   const [query, setQuery]         = useState("");
   const [results, setResults]     = useState([]);
+  const [total, setTotal]         = useState(0);
+  const [page, setPage]           = useState(1);
+  const [serverPaged, setServerPaged] = useState(false);
   const [searching, setSearching] = useState(false);
   const [selected, setSelected]   = useState(null);
   const [urgent, setUrgent]       = useState(false);
@@ -285,14 +290,53 @@ function AddModal({ onClose, onAdded }) {
   const [editingPatient, setEditingPatient] = useState(null);
   const deb = useRef();
 
-  const doSearch = async (q) => {
-    if (!q.trim()) { setResults([]); return; }
+  const doSearch = async (q, p = 1) => {
+    if (!q.trim()) { setResults([]); setTotal(0); setPage(1); return; }
     setSearching(true);
-    try { const r = await axios.get(`${PAT_API}?q=${encodeURIComponent(q)}`, { headers: auth() }); setResults(r.data); }
-    catch { setResults([]); }
+    try {
+      const r = await axios.get(
+        `${PAT_API}?q=${encodeURIComponent(q)}&page=${p}&limit=${SEARCH_PAGE_SIZE}`,
+        { headers: auth() }
+      );
+      if (Array.isArray(r.data)) {
+        // Backend returns everything -> paginate client-side
+        setServerPaged(false);
+        setResults(r.data);
+        setTotal(r.data.length);
+      } else {
+        // Backend returns { data, total } -> paginate server-side
+        const rows = r.data?.data || [];
+        setServerPaged(true);
+        setResults(rows);
+        setTotal(r.data?.total ?? rows.length);
+      }
+      setPage(p);
+    } catch {
+      setResults([]); setTotal(0); setPage(1);
+    }
     setSearching(false);
   };
-  const handleQ = v => { setQuery(v); clearTimeout(deb.current); deb.current = setTimeout(() => doSearch(v), 350); };
+
+  const handleQ = v => {
+    setQuery(v);
+    setPage(1);
+    clearTimeout(deb.current);
+    deb.current = setTimeout(() => doSearch(v, 1), 350);
+  };
+
+  useEffect(() => () => clearTimeout(deb.current), []);
+
+  const totalPages = Math.max(1, Math.ceil(total / SEARCH_PAGE_SIZE));
+  const visibleResults = serverPaged
+    ? results
+    : results.slice((page - 1) * SEARCH_PAGE_SIZE, page * SEARCH_PAGE_SIZE);
+
+  const goToPage = (p) => {
+    const next = Math.min(Math.max(1, p), totalPages);
+    if (next === page) return;
+    if (serverPaged) doSearch(query, next);
+    else setPage(next);
+  };
 
   const addToQueue = async (id) => {
     setAdding(true); setError("");
@@ -330,9 +374,9 @@ function AddModal({ onClose, onAdded }) {
                 onFocus={() => setSfocus(true)} onBlur={() => setSfocus(false)} />
             </div>
             {searching && <p style={{ color: C.textSoft, fontSize: 13, textAlign: "center", marginBottom: 12 }}>Recherche en cours…</p>}
-            {results.length > 0 && (
-              <div style={{ marginBottom: 16, display: "flex", flexDirection: "column", gap: 8 }}>
-                {results.map(p => (
+            {total > 0 && (
+              <div style={{ marginBottom: 12, display: "flex", flexDirection: "column", gap: 8, opacity: searching ? 0.6 : 1, transition: "opacity .15s" }}>
+                {visibleResults.map(p => (
                   <div key={p.id} onClick={() => setSelected(s => s?.id === p.id ? null : p)}
                     style={{ padding: "12px 16px", borderRadius: 12, cursor: "pointer", border: `1.5px solid ${selected?.id === p.id ? C.teal : C.border}`, background: selected?.id === p.id ? C.tealLight : C.surfaceAlt, display: "flex", justifyContent: "space-between", alignItems: "center", transition: "all .15s" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -358,7 +402,22 @@ function AddModal({ onClose, onAdded }) {
                 ))}
               </div>
             )}
-            {query && !searching && results.length === 0 && (
+
+            {/* PAGINATION */}
+            {total > SEARCH_PAGE_SIZE && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, padding: "8px 4px 0", borderTop: `1px solid ${C.borderSoft}` }}>
+                <span style={{ fontSize: 12, color: C.textSoft, fontWeight: 600 }}>
+                  {(page - 1) * SEARCH_PAGE_SIZE + 1}–{Math.min(page * SEARCH_PAGE_SIZE, total)} sur {total}
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <Btn variant="ghost" size="sm" disabled={page <= 1 || searching} onClick={() => goToPage(page - 1)} style={{ opacity: page <= 1 ? 0.4 : 1 }}>← Préc.</Btn>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: C.text, minWidth: 48, textAlign: "center" }}>{page} / {totalPages}</span>
+                  <Btn variant="ghost" size="sm" disabled={page >= totalPages || searching} onClick={() => goToPage(page + 1)} style={{ opacity: page >= totalPages ? 0.4 : 1 }}>Suiv. →</Btn>
+                </div>
+              </div>
+            )}
+
+            {query && !searching && total === 0 && (
               <div style={{ textAlign: "center", padding: "28px 0 20px", borderRadius: 12, background: C.sand, border: `1px dashed ${C.sandBorder}`, marginBottom: 16 }}>
                 <div style={{ fontSize: 28, marginBottom: 8 }}>🔎</div>
                 <div style={{ fontWeight: 700, fontSize: 14, color: C.text, marginBottom: 4 }}>Aucun dossier trouvé</div>
@@ -366,7 +425,7 @@ function AddModal({ onClose, onAdded }) {
                 <Btn variant="soft" size="sm" onClick={() => setView("create")}>+ Créer un dossier</Btn>
               </div>
             )}
-            {results.length > 0 && (
+            {total > 0 && (
               <div style={{ textAlign: "right", marginBottom: 12 }}>
                 <button onClick={() => setView("create")} style={{ background: "none", border: "none", color: C.teal, cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "'Plus Jakarta Sans', sans-serif" }}>+ Créer un nouveau dossier</button>
               </div>
@@ -410,7 +469,7 @@ function AddModal({ onClose, onAdded }) {
         <EditPatientModal
           patient={editingPatient}
           onClose={() => setEditingPatient(null)}
-          onSaved={() => doSearch(query)}
+          onSaved={() => doSearch(query, page)}
         />
       )}
     </>

@@ -23,6 +23,7 @@ const MEDICATION_FORMS = [
   { value: "gouttes", label: "Gouttes", icon: "💧" },
   { value: "pommade", label: "Pommade / Crème", icon: "🧴" },
   { value: "suppositoire", label: "Suppositoire", icon: "🔹" },
+  { value: "ovule", label: "Ovule", icon: "🥚" },
   { value: "patch", label: "Patch", icon: "🩹" },
   { value: "inhalation", label: "Inhalation", icon: "💨" },
 ];
@@ -56,7 +57,8 @@ const FORME_SYNONYMS = {
   inhalation: [
     "inhalation", "inhal", "aerosol", "nebulis", "neb.", "trache", "gaz pour",
   ],
-  suppositoire: ["suppositoire", "suppositoires", "ovule", "ovules"],
+  ovule: ["ovule", "ovules"],
+  suppositoire: ["suppositoire", "suppositoires"],
   // Eye, ear and nasal liquids (drops, sprays, eye washes) all share the
   // "gouttes" bucket since they're dosed the same way. Ointments/gels for
   // the same routes (pommade ophtalmique, gel dermique...) are handled by

@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
+import DOMPurify from "dompurify";
 
 const UpdateContext = createContext(null);
 
@@ -35,14 +36,20 @@ export function UpdateProvider({ children }) {
       // no-op — sync IPC can throw if main hasn't registered the handler yet
     }
 
-    window.updaterAPI.onStatus((data) => {
+    const offStatus = window.updaterAPI.onStatus((data) => {
       setUpdate(data);
       if (data.status === "available") setProgress(0);
     });
 
-    window.updaterAPI.onProgress((data) => {
+    const offProgress = window.updaterAPI.onProgress((data) => {
       setProgress(data.percent);
     });
+
+    // Unsubscribe on unmount so listeners don't stack up (logout/login, StrictMode)
+    return () => {
+      offStatus?.();
+      offProgress?.();
+    };
   }, []);
 
   const installNow = () => window.updaterAPI?.installNow();
@@ -69,8 +76,9 @@ function UpdateBanner({ update, progress, onInstall, onDismiss }) {
     return () => window.removeEventListener("med-theme-change", handleThemeChange);
   }, []);
 
-  // Nothing to show for these states — silent as before
-  if (["idle", "checking", "not-available"].includes(update.status)) {
+  // Only "available" (downloading) and "downloaded" (ready to install) are shown.
+  // Errors are logged in the main process and kept out of the UI.
+  if (!["available", "downloaded"].includes(update.status)) {
     return null;
   }
 
@@ -124,8 +132,10 @@ function UpdateBanner({ update, progress, onInstall, onDismiss }) {
                   {entry.version && (
                     <p className="font-medium">{entry.version}</p>
                   )}
-                  {/* electron-updater notes are HTML/markdown from the release body */}
-                  <div dangerouslySetInnerHTML={{ __html: entry.note }} />
+                  {/* electron-updater notes are HTML from the release body — sanitized */}
+                  <div
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(entry.note) }}
+                  />
                 </div>
               ))}
             </div>
@@ -138,21 +148,6 @@ function UpdateBanner({ update, progress, onInstall, onDismiss }) {
             Redémarrer et installer
           </button>
         </>
-      )}
-
-      {update.status === "error" && (
-        <div className="flex items-start justify-between">
-          <p className="text-sm text-red-500">
-            Erreur de mise à jour: {update.message}
-          </p>
-          <button
-            onClick={onDismiss}
-            className="text-xs opacity-50 hover:opacity-100 ml-2"
-            aria-label="Fermer"
-          >
-            ✕
-          </button>
-        </div>
       )}
     </div>
   );
