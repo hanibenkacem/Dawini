@@ -29,6 +29,7 @@ export default function OrdonnancePage() {
     nom_ar: "",
     prenom_ar: "",
     specialite: "",
+    numero_ordre: "",
     telephone: "",
     adresse: "",
     logo: "",
@@ -77,6 +78,7 @@ export default function OrdonnancePage() {
             prenom_fr: names.slice(1).join(" ") || "",
             nom_ar: result.nom_medecin_ar || "",
             specialite: result.specialite || "",
+            numero_ordre: result.numero_ordre || "",
             adresse: result.adresse || "",
             telephone: result.telephone || "",
             logo: result.logo ? `${API_BASE}/uploads/${result.logo}` : "",
@@ -99,6 +101,7 @@ export default function OrdonnancePage() {
     formData.append("nom_medecin", `${data.nom_fr} ${data.prenom_fr}`);
     formData.append("nom_medecin_ar", data.nom_ar);
     formData.append("specialite", data.specialite);
+    formData.append("numero_ordre", data.numero_ordre);
     formData.append("adresse", data.adresse);
     formData.append("telephone", data.telephone);
     formData.append("template", data.template);
@@ -206,7 +209,8 @@ export default function OrdonnancePage() {
 
   const doctorForPreview = {
     nomFr: data.nom_fr, prenomFr: data.prenom_fr, nomAr: data.nom_ar,
-    specialite: data.specialite, adresse: data.adresse, telephone: data.telephone,
+    specialite: data.specialite, numeroOrdre: data.numero_ordre,
+    adresse: data.adresse, telephone: data.telephone,
     logo: data.logo, background: data.background,
   };
   const patientForPreview = {
@@ -308,6 +312,7 @@ export default function OrdonnancePage() {
               <input name="prenom_fr" value={data.prenom_fr} placeholder="Prénom (FR)" onChange={handleChange} style={inputStyle} /><br /><br />
               <input name="nom_ar" value={data.nom_ar} placeholder="اللقب والاسم (AR)" onChange={handleChange} style={inputStyle} dir="rtl" /><br /><br />
               <input name="specialite" value={data.specialite} placeholder="Spécialité" onChange={handleChange} style={inputStyle} /><br /><br />
+              <input name="numero_ordre" value={data.numero_ordre} placeholder="N° d'ordre" onChange={handleChange} style={inputStyle} /><br /><br />
               <input name="telephone" value={data.telephone} placeholder="Téléphone" onChange={handleChange} style={inputStyle} /><br /><br />
               <input name="adresse" value={data.adresse} placeholder="Adresse" onChange={handleChange} style={inputStyle} /><br /><br />
 

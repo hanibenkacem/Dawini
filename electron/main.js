@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const backup = require('./backup-manager');
 const { autoUpdater } = require('electron-updater');
 const { startMysqld, stopMysqld } = require('./mysql-manager');
 const { setupAppDatabase } = require('./setup-database');
@@ -121,6 +122,17 @@ async function bootServerRole() {
   }
 
   startBackendInProcess(dbCreds);
+
+  // Backups only make sense on the server laptop, once MySQL is up and the
+  // real DB credentials are known.
+  try {
+    backup.init({ creds: dbCreds });
+    backup.registerIpc(ipcMain, () => mainWindow);
+    backup.startScheduler();
+    log('Backup manager ready');
+  } catch (err) {
+    log('Backup manager failed to start: ' + err.stack);
+  }
 
   backendReady = true;
   if (mainWindow) mainWindow.webContents.send('backend-ready');

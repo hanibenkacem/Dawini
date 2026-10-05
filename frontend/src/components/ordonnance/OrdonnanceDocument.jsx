@@ -20,6 +20,12 @@ export const PRINT_LABELS = {
 const fmtLong = (d) =>
   d ? new Date(d).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }) : "___________";
 
+// Uppercases the first letter of each word, including after a hyphen or
+// apostrophe: "jean-pierre el amrani" -> "Jean-Pierre El Amrani".
+// The rest of each word is left exactly as typed.
+const capitalizeName = (s) =>
+  (s || "").replace(/(^|[\s\-'’])(\p{L})/gu, (_, sep, ch) => sep + ch.toUpperCase());
+
 const parseMedLine = (line) => {
   const sepIdx = line.indexOf(" — ");
   if (sepIdx === -1) return { name: line.trim(), posology: "" };
@@ -142,12 +148,21 @@ const doctorNameStyle = (primaryText, secondaryText, fontFamily, maxWidthPx) => 
  * (logo, Arabic doctor name) via theme.showLogo / theme.showArabicName —
  * everything else (fonts, body layout, emojis) is identical across templates.
  *
+ * The logo block is only rendered when the doctor actually uploaded a logo;
+ * there is no empty placeholder box.
+ *
+ * The doctor's N° d'ordre (doctor.numeroOrdre) is printed under the
+ * specialty when set, and omitted entirely when empty.
+ *
  * `simplified` strips the decorative/optional bits some doctors don't want:
  * the 👤/📅 icons in the patient info bar, the "💊 Traitement prescrit :"
  * heading above the medication list, the "Durée" / "Renouvellements"
  * footer lines, the Arabic dosage-reminder note under the footer, and the
  * colored number badges next to each medication (replaced with a plain
  * dark-outline badge — same shape, no colored fill).
+ *
+ * Certificate sentences don't repeat the patient name or the doctor's
+ * specialty: both already appear in the patient bar / header above.
  */
 const OrdonnanceDocument = forwardRef(function OrdonnanceDocument(
   { doctor, patient, medicaments, note, docType = "ordonnance", certificate, templateId, simplified = false },
@@ -155,6 +170,11 @@ const OrdonnanceDocument = forwardRef(function OrdonnanceDocument(
 ) {
   const theme = getTemplate(templateId).theme;
   const cert = certificate || {};
+
+  // Patient first/last name always start with a capital letter on the document
+  const patientPrenom = capitalizeName(patient.prenomFr);
+  const patientNom = capitalizeName(patient.nomFr);
+
   const nbJours =
     cert.dateDebut && cert.dateFin
       ? Math.round((new Date(cert.dateFin) - new Date(cert.dateDebut)) / 86400000) + 1
@@ -186,17 +206,16 @@ const OrdonnanceDocument = forwardRef(function OrdonnanceDocument(
               Dr {doctor.nomFr} {doctor.prenomFr}
             </h3>
             <p style={{ margin: "2px 0", fontSize: "9pt" }}><strong>{doctor.specialite}</strong></p>
+            {doctor.numeroOrdre && (
+              <p style={{ margin: "2px 0", fontSize: "8pt" }}>N° d'ordre : {doctor.numeroOrdre}</p>
+            )}
             <p style={{ margin: "2px 0", fontSize: "8pt" }}>📍{doctor.adresse}</p>
             <p style={{ margin: "2px 0", fontSize: "8pt" }}>📞 {doctor.telephone}</p>
           </div>
 
-          {theme.showLogo && (
+          {theme.showLogo && doctor.logo && (
             <div style={{ flexShrink: 0, margin: "0 16px", textAlign: "center" }}>
-              {doctor.logo ? (
-                <img src={doctor.logo} alt="logo cabinet" style={{ maxWidth: "70px", maxHeight: "70px", display: "block" }} />
-              ) : (
-                <div style={{ width: "60px", height: "60px", border: "1px dashed #cbd5e1", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "8pt", color: "#94a3b8" }}>Logo</div>
-              )}
+              <img src={doctor.logo} alt="logo cabinet" style={{ maxWidth: "70px", maxHeight: "70px", display: "block" }} />
             </div>
           )}
 
@@ -222,7 +241,7 @@ const OrdonnanceDocument = forwardRef(function OrdonnanceDocument(
         {/* Patient info */}
         <div style={{ backgroundColor: "#f8fafc", padding: "8px 12px", borderRadius: "12px", margin: "12px 0", border: `1px solid ${theme.border}`, fontSize: "9pt" }}>
           <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "6px" }}>
-            <div><strong>{!simplified && "👤 "}Patient :</strong> {patient.prenomFr} {patient.nomFr}</div>
+            <div><strong>{!simplified && "👤 "}Patient :</strong> {patientPrenom} {patientNom}</div>
             {(patient.prenomAr || patient.nomAr) && (
               <div style={{ textAlign: "right", direction: "rtl" }}><strong>المريض :</strong> {patient.prenomAr} {patient.nomAr}</div>
             )}
@@ -326,11 +345,10 @@ const OrdonnanceDocument = forwardRef(function OrdonnanceDocument(
         ) : docType === "bonne_sante" ? (
           <div style={{ margin: "20px 0", minHeight: "250px", fontSize: "10.5pt" }}>
             <p style={{ margin: "0 0 14px 0", textAlign: "justify" }}>
-              Je soussigné(e), <strong>Dr {doctor.nomFr} {doctor.prenomFr}</strong>
-              {doctor.specialite ? `, ${doctor.specialite}` : ""}, certifie avoir examiné ce jour, le{" "}
-              <strong>{fmtLong(cert.date)}</strong>, <strong>{patient.prenomFr} {patient.nomFr}</strong>{" "}
-              et atteste qu'il/elle ne présente, à l'examen clinique de ce jour, aucune contre-indication
-              apparente à la pratique d'une activité normale.
+              Je soussigné(e), <strong>Dr {doctor.nomFr} {doctor.prenomFr}</strong>,
+              certifie avoir examiné ce jour, le <strong>{fmtLong(cert.date)}</strong>,
+              l'intéressé(e) et atteste qu'il/elle ne présente, à l'examen clinique de ce jour,
+              aucune contre-indication apparente à la pratique d'une activité normale.
             </p>
             {cert.motif && <p style={{ margin: "0 0 14px 0" }}><strong>Motif :</strong> {cert.motif}</p>}
             <p style={{ margin: "0 0 14px 0", fontSize: "9pt", color: theme.muted }}>
@@ -340,11 +358,10 @@ const OrdonnanceDocument = forwardRef(function OrdonnanceDocument(
         ) : docType === "mariage" ? (
           <div style={{ margin: "20px 0", minHeight: "250px", fontSize: "10.5pt" }}>
             <p style={{ margin: "0 0 14px 0", textAlign: "justify" }}>
-              Je soussigné(e), <strong>Dr {doctor.nomFr} {doctor.prenomFr}</strong>
-              {doctor.specialite ? `, ${doctor.specialite}` : ""}, certifie avoir examiné ce jour, le{" "}
-              <strong>{fmtLong(cert.date)}</strong>, <strong>{patient.prenomFr} {patient.nomFr}</strong>{" "}
-              et atteste qu'il/elle ne présente, à l'examen clinique de ce jour, aucune contre-indication
-              apparente au mariage.
+              Je soussigné(e), <strong>Dr {doctor.nomFr} {doctor.prenomFr}</strong>,
+              certifie avoir examiné ce jour, le <strong>{fmtLong(cert.date)}</strong>,
+              l'intéressé(e) et atteste qu'il/elle ne présente, à l'examen clinique de ce jour,
+              aucune contre-indication apparente au mariage.
             </p>
             {cert.motif && <p style={{ margin: "0 0 14px 0" }}><strong>Remarque :</strong> {cert.motif}</p>}
             <p style={{ margin: "0 0 14px 0", fontSize: "9pt", color: theme.muted }}>
@@ -360,9 +377,8 @@ const OrdonnanceDocument = forwardRef(function OrdonnanceDocument(
               </div>
             )}
             <p style={{ margin: "0 0 14px 0", textAlign: "justify" }}>
-              Je soussigné(e), <strong>Dr {doctor.nomFr} {doctor.prenomFr}</strong>
-              {doctor.specialite ? `, ${doctor.specialite}` : ""}, certifie avoir examiné ce jour{" "}
-              <strong>{patient.prenomFr} {patient.nomFr}</strong> et atteste que son état de santé{" "}
+              Je soussigné(e), <strong>Dr {doctor.nomFr} {doctor.prenomFr}</strong>,
+              certifie avoir examiné ce jour l'intéressé(e) et atteste que son état de santé{" "}
               {docType === "arret_travail" ? "nécessite un arrêt de travail" : "nécessite un repos médical"}{" "}
               du <strong>{fmtLong(cert.dateDebut)}</strong> au <strong>{fmtLong(cert.dateFin)}</strong> inclus
               {nbJours ? `, soit ${nbJours} jour${nbJours > 1 ? "s" : ""}` : ""}.

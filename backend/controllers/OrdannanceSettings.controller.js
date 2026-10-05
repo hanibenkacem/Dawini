@@ -9,6 +9,9 @@ exports.SaveOrdonnance = (req, res) => {
     const { nom_medecin, nom_medecin_ar, specialite, adresse, telephone, template } = req.body;
     const id_medecin = req.user.userId;
 
+    // Empty string -> NULL so the document doesn't print an empty "N° d'ordre"
+    const numeroOrdre = (req.body.numero_ordre || '').trim() || null;
+
     // Sent from the frontend as FormData strings, e.g. "true"
     const modeSimplifie = req.body.mode_simplifie === 'true';
 
@@ -39,12 +42,13 @@ exports.SaveOrdonnance = (req, res) => {
 
             const sql = `
                 INSERT INTO ordonnance_settings 
-                (id_medecin, nom_medecin, nom_medecin_ar, specialite, adresse, telephone, logo, background, template, mode_simplifie)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id_medecin, nom_medecin, nom_medecin_ar, specialite, numero_ordre, adresse, telephone, logo, background, template, mode_simplifie)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE
                 nom_medecin = VALUES(nom_medecin),
                 nom_medecin_ar = VALUES(nom_medecin_ar),
                 specialite = VALUES(specialite),
+                numero_ordre = VALUES(numero_ordre),
                 adresse = VALUES(adresse),
                 telephone = VALUES(telephone),
                 logo = VALUES(logo),
@@ -53,7 +57,7 @@ exports.SaveOrdonnance = (req, res) => {
                 mode_simplifie = VALUES(mode_simplifie)`;
 
             const values = [
-                id_medecin, nom_medecin, nom_medecin_ar, specialite, adresse, telephone,
+                id_medecin, nom_medecin, nom_medecin_ar, specialite, numeroOrdre, adresse, telephone,
                 finalLogo, finalBackground, template || 'classic', modeSimplifie
             ];
 

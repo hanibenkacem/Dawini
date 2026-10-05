@@ -87,6 +87,18 @@ async function runMigrations(creds) {
       'id',
       'CASCADE'
     );
+        await ensureColumnExists(
+      connection,
+      'consultations',
+      'deleted_at',
+      'DATETIME NULL DEFAULT NULL'
+    );
+    await ensureColumnExists(
+  connection,
+  'ordonnance_settings',
+  'numero_ordre',
+  'VARCHAR(50) NULL DEFAULT NULL'
+);
     // future migrations get appended here
   } finally {
     await connection.end();

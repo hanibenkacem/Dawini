@@ -1,6 +1,6 @@
 // pages/PatientDossier.jsx
 import { useEffect, useState } from "react";
-import { useParams, useLocation } from "react-router-dom";
+import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { API_BASE } from '../config/api';
 import axios from "axios";
 import OrdonnanceModal from "../components/OrdonnanceModal";
@@ -173,7 +173,8 @@ const ConsultDocs = ({ docs }) => {
 };
 
 /* ═══════════════════════════════════════════════════════════════════
-   PAYMENT MODAL
+   PAYMENT MODAL  (cannot be dismissed — the doctor must complete one
+   of the three outcomes: send to caisse, pay directly, or mark free)
 ═══════════════════════════════════════════════════════════════════ */
 const MODES = [
   { value: "cash",  label: "Espèces",     icon: "💵" },
@@ -267,16 +268,13 @@ function PaymentModal({ fileId, consultationId, patientName, onClose, onDone }) 
   const toggleFree = () => { setIsFree(f => !f); setError(null); };
 
   return (
-    <div className="pay-overlay" onClick={onClose}>
-      <div className="pay-modal" onClick={e => e.stopPropagation()}>
+    <div className="pay-overlay">
+      <div className="pay-modal">
         <div className="pay-modal-header">
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(255,255,255,0.45)", marginBottom: 4 }}>Fin de consultation</div>
-              <div style={{ fontSize: 20, fontWeight: 800, color: "#fff" }}>Règlement des honoraires</div>
-              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", marginTop: 3 }}>{patientName}</div>
-            </div>
-            <button onClick={onClose} disabled={loading} style={{ background: "rgba(255,255,255,0.1)", border: "none", borderRadius: 10, width: 34, height: 34, cursor: "pointer", fontSize: 18, color: "rgba(255,255,255,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(255,255,255,0.45)", marginBottom: 4 }}>Fin de consultation</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: "#fff" }}>Règlement des honoraires</div>
+            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", marginTop: 3 }}>{patientName}</div>
           </div>
         </div>
 
@@ -405,6 +403,7 @@ function PaymentModal({ fileId, consultationId, patientName, onClose, onDone }) 
 export default function PatientDossier() {
   const { id }    = useParams();
   const location  = useLocation();
+  const navigate  = useNavigate();
 
   const incomingConsultId = location.state?.id_consultation ?? null;
   const incomingFileId    = location.state?.file_id         ?? null;
@@ -422,6 +421,8 @@ export default function PatientDossier() {
   const [showPayModal, setShowPayModal]       = useState(false);
   const [form, setForm]       = useState({ diagnostic: "", notes: "", medicaments: "" });
   const [submitting, setSubmitting] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting]         = useState(false);
 
   useEffect(() => {
     const handler = e => setDark(e.detail);
@@ -520,14 +521,14 @@ export default function PatientDossier() {
         );
       }
 
-      // Mark this consultation as "active" regardless of how it was created —
-      // this is what makes the "Terminer la consultation" / payment button
-      // appear even for a consultation added directly from the dossier
-      // (i.e. not routed through file d'attente, so activeFileId stays null).
+      // Mark this consultation as "active" regardless of how it was created
+      // (including a consultation added directly from the dossier, where
+      // activeFileId stays null), then open the payment modal straight away.
       setActiveConsultId(consultationId);
       setForm({ diagnostic: "", notes: "", medicaments: "" });
       await fetchConsultations();
       setActiveTab("history");
+      setShowPayModal(true);
 
     } catch (err) {
       console.error("Submit error:", err.response?.data || err.message);
@@ -540,7 +541,20 @@ export default function PatientDossier() {
   const handlePaymentDone = () => {
     setActiveConsultId(null);
     setActiveFileId(null);
-    fetchConsultations();
+    navigate("/doctor-dashboard");   // ← replace with your tableau de bord route
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await axios.delete(`${BASE}/consultation/${deleteTarget.id}`, { headers: hdr() });
+      setDeleteTarget(null);
+      await fetchConsultations();
+    } catch (e) {
+      alert(e.response?.data?.error || "Erreur lors de la suppression.");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const getInitials = (nom, prenom) =>
@@ -590,7 +604,7 @@ export default function PatientDossier() {
                 <div style={{ width:36, height:36, borderRadius:10, background:"rgba(255,255,255,0.15)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>🩺</div>
                 <div>
                   <div style={{ fontWeight:700, fontSize:14, color:"#fff" }}>Consultation en cours</div>
-                  <div style={{ fontSize:12, color:"rgba(255,255,255,0.7)", marginTop:2 }}>Remplissez le diagnostic et les notes, puis terminez la consultation.</div>
+                  <div style={{ fontSize:12, color:"rgba(255,255,255,0.7)", marginTop:2 }}>Remplissez le diagnostic et les notes, puis validez pour passer au règlement.</div>
                 </div>
                 <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:6, background:"rgba(255,255,255,0.15)", borderRadius:20, padding:"4px 12px" }}>
                   <span className="pulse-dot" style={{ width:8, height:8 }} />
@@ -701,17 +715,6 @@ export default function PatientDossier() {
                       {activeConsultId ? "🩺 Consultation en cours" : "✚ Nouvelle consultation"}
                     </button>
                   </div>
-                  {activeConsultId && activeTab === "history" && (
-                    <button
-                      onClick={() => setShowPayModal(true)}
-                      style={{ display:"flex", alignItems:"center", gap:8, background:"linear-gradient(135deg,#0d9488,#0f766e)", color:"white", border:"none", borderRadius:10, padding:"8px 18px", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"'DM Sans',sans-serif", boxShadow:"0 2px 10px rgba(13,148,136,0.35)", transition:"all .15s" }}
-                      onMouseOver={e => { e.currentTarget.style.filter="brightness(1.08)"; e.currentTarget.style.transform="translateY(-1px)"; }}
-                      onMouseOut={e => { e.currentTarget.style.filter="none"; e.currentTarget.style.transform="none"; }}
-                    >
-                      <span style={{ fontSize:16 }}>✓</span>
-                      Terminer la consultation
-                    </button>
-                  )}
                 </div>
 
                 <div style={{ padding:24 }}>
@@ -782,12 +785,12 @@ export default function PatientDossier() {
                                   >
                                     👁️ {consult.medicaments ? "Voir ordonnance" : "Pas d'ordonnance"}
                                   </button>
-                                  {isActive && (
+                                  {!consult.medicaments && !isActive && (
                                     <button
-                                      onClick={() => setShowPayModal(true)}
-                                      style={{ display:"flex", alignItems:"center", gap:6, background:"linear-gradient(135deg,#0d9488,#0f766e)", color:"white", border:"none", borderRadius:6, padding:"6px 16px", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"'DM Sans',sans-serif", boxShadow:"0 2px 8px rgba(13,148,136,0.3)" }}
+                                      onClick={() => setDeleteTarget(consult)}
+                                      style={{ background:"#fff1f2", color:"#be123c", border:"1px solid #fecdd3", padding:"6px 14px", borderRadius:6, fontSize:12, cursor:"pointer", display:"flex", alignItems:"center", gap:5, fontFamily:"'DM Sans',sans-serif" }}
                                     >
-                                      <span>✓</span> Terminer la consultation
+                                      🗑 Supprimer
                                     </button>
                                   )}
                                 </div>
@@ -803,9 +806,10 @@ export default function PatientDossier() {
                       setForm={setForm}
                       onChange={handleChange}
                       onSubmit={handleSubmit}
-onOpenPreview={(docType = "ordonnance", certData = null) =>
-  setSelectedConsultation({ docType, medicaments: form.medicaments, certData })
-}                      submitting={submitting}
+                      onOpenPreview={(docType = "ordonnance", certData = null) =>
+                        setSelectedConsultation({ docType, medicaments: form.medicaments, certData })
+                      }
+                      submitting={submitting}
                     />
                   )}
                 </div>
@@ -825,15 +829,33 @@ onOpenPreview={(docType = "ordonnance", certData = null) =>
         />
       )}
 
+      {deleteTarget && (
+        <div className="pay-overlay" onClick={() => !deleting && setDeleteTarget(null)}>
+          <div className="pay-modal" style={{ width:"min(400px,95vw)", padding:"28px" }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize:36, marginBottom:8 }}>🗑</div>
+            <div style={{ fontSize:18, fontWeight:800, color:"#0f172a", marginBottom:6 }}>Supprimer cette consultation ?</div>
+            <div style={{ fontSize:13, color:"#64748b", lineHeight:1.5, marginBottom:20 }}>
+              {fmts(deleteTarget.date_consultation)} — {deleteTarget.diagnostic || "Diagnostic non spécifié"}
+            </div>
+            <div style={{ display:"flex", gap:10 }}>
+              <button className="pay-btn" onClick={() => setDeleteTarget(null)} disabled={deleting}
+                style={{ background:"#f1f5f9", color:"#475569" }}>Annuler</button>
+              <button className="pay-btn" onClick={handleDelete} disabled={deleting}
+                style={{ background:"#e11d48", color:"white" }}>{deleting ? "…" : "Supprimer"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <OrdonnanceModal
-  show={!!selectedConsultation}
-  onClose={() => setSelectedConsultation(null)}
-  doctorSettings={doctorSettings}
-  patient={patient}
-  docType={selectedConsultation?.docType || "ordonnance"}
-  medicaments={selectedConsultation?.medicaments}
-  certificate={selectedConsultation?.certData}
-/>
+        show={!!selectedConsultation}
+        onClose={() => setSelectedConsultation(null)}
+        doctorSettings={doctorSettings}
+        patient={patient}
+        docType={selectedConsultation?.docType || "ordonnance"}
+        medicaments={selectedConsultation?.medicaments}
+        certificate={selectedConsultation?.certData}
+      />
     </div>
   );
 }

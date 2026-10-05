@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import TablePatients from "../components/tablepatients";
 import ModalPatient from "../components/ModalPatient";
+import BackupModal from "../components/BackupModal";
 import axios from "axios";
 import { API_BASE } from '../config/api';
 
@@ -111,6 +112,7 @@ function ConfirmDeleteModal({ label, onConfirm, onCancel, C }) {
 
 export default function MedecinDashboard() {
   const [openModal, setOpenModal] = useState(false);
+  const [openBackup, setOpenBackup] = useState(false);
   const [patients, setPatients] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [search, setSearch] = useState("");
@@ -297,6 +299,26 @@ export default function MedecinDashboard() {
             )}
           </div>
 
+          {/* BACKUP BUTTON (desktop app only) */}
+          {window.dawiniBackup && (
+            <button
+              onClick={() => setOpenBackup(true)}
+              style={{
+                background: C.slateLight,
+                color: C.text,
+                fontWeight: 600,
+                fontSize: "14px",
+                padding: "10px 16px",
+                borderRadius: "10px",
+                border: `1px solid ${C.border}`,
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >
+              💾 Sauvegarde
+            </button>
+          )}
+
           <button
             onClick={() => setOpenModal(true)}
             style={{
@@ -417,6 +439,12 @@ export default function MedecinDashboard() {
         onClose={() => setOpenModal(false)}
         onSuccess={fetchPatients}
         isDark={dark}
+      />
+
+      <BackupModal
+        isOpen={openBackup}
+        onClose={() => setOpenBackup(false)}
+        C={C}
       />
 
       {pendingDelete && (

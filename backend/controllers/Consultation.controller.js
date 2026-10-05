@@ -65,13 +65,13 @@ exports.GetConsultationByPatient = (req,res)=>{
   exports.GetConsultationById = (req,res)=>{
       const {id} = req.params
       const sql = `SELECT 
-    c.*,
-    o.instructions AS medicaments
-  FROM consultations c
-  LEFT JOIN ordonnances o 
-    ON o.id_consultation = c.id
-  WHERE c.id_patient = ?
-  ORDER BY c.date_consultation DESC;`
+  c.*,
+  o.instructions AS medicaments
+FROM consultations c
+LEFT JOIN ordonnances o 
+  ON o.id_consultation = c.id
+WHERE c.id_patient = ? AND c.deleted_at IS NULL
+ORDER BY c.date_consultation DESC;`
       db.query(sql, [id], (err, result) => {
           if (err) return res.status(500).json(err);
       else{
@@ -154,5 +154,29 @@ exports.updateConsultation = (req, res) => {
     }
 
     return res.json({ success: true, message: "Consultation updated successfully" });
+  });
+};
+exports.deleteConsultation = (req, res) => {
+  const { id } = req.params;
+
+  const checkSql = `
+    SELECT c.id,
+           (SELECT COUNT(*) FROM ordonnances o WHERE o.id_consultation = c.id) AS nb_ordo
+    FROM consultations c
+    WHERE c.id = ? AND c.deleted_at IS NULL`;
+
+  db.query(checkSql, [id], (err, rows) => {
+    if (err) return res.status(500).json({ error: "Erreur serveur." });
+
+    if (rows.length === 0)
+      return res.status(404).json({ error: "Consultation introuvable." });
+
+    if (rows[0].nb_ordo > 0)
+      return res.status(403).json({ error: "Impossible de supprimer une consultation avec ordonnance." });
+
+    db.query(`UPDATE consultations SET deleted_at = NOW() WHERE id = ?`, [id], (err2) => {
+      if (err2) return res.status(500).json({ error: "Erreur serveur." });
+      res.json({ success: true });
+    });
   });
 };

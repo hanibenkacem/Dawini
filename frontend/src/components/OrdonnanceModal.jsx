@@ -25,6 +25,7 @@ const OrdonnanceModal = ({
     prenomFr: doctorSettings.nom_medecin?.split(" ").slice(1).join(" ") || "",
     nomAr: doctorSettings.nom_medecin_ar || "",
     specialite: doctorSettings.specialite || "",
+    numeroOrdre: doctorSettings.numero_ordre || "",
     adresse: doctorSettings.adresse || "",
     telephone: doctorSettings.telephone || "",
     logo: doctorSettings.logo ? `${API_BASE}/uploads/${doctorSettings.logo}` : "",

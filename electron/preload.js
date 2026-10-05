@@ -59,3 +59,16 @@ contextBridge.exposeInMainWorld('updaterAPI', {
   },
   installNow: () => ipcRenderer.send('update:install-now'),
 });
+
+// Backup bridge — only exposed on the server laptop (the client has no
+// local MySQL to back up). The UI checks window.dawiniBackup to show/hide
+// the "Sauvegarde" button.
+if (config && config.role === 'server') {
+  contextBridge.exposeInMainWorld('dawiniBackup', {
+    get: () => ipcRenderer.invoke('backup:get'),
+    set: (patch) => ipcRenderer.invoke('backup:set', patch),
+    chooseFolder: () => ipcRenderer.invoke('backup:chooseFolder'),
+    now: () => ipcRenderer.invoke('backup:now'),
+    restore: (filePath) => ipcRenderer.invoke('backup:restore', filePath ?? null),
+  });
+}

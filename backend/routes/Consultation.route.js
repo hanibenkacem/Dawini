@@ -9,5 +9,5 @@ router.post("/ordonnance",    verifytoken, consultation.insertOrdonnance);
 router.post("/:id/documents", verifytoken, consultation.upload.single('file'), consultation.uploadDocument);
 router.get("/:id/documents",  verifytoken, consultation.getDocuments);
 router.put("/:id",            consultation.updateConsultation);
-
+router.delete("/:id", verifytoken, consultation.deleteConsultation);
 module.exports = router
