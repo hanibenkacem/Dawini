@@ -180,3 +180,118 @@ exports.deleteConsultation = (req, res) => {
     });
   });
 };
+
+/* ═══════════════════════════════════════════════════════════════════
+   BILANS BIOLOGIQUES
+   `tests` holds the stable test ids from the frontend catalogue
+   (config/bilanTests.js) as a JSON array stored in a TEXT column;
+   labels are resolved on the frontend. Deletion is soft (deleted_at),
+   same as consultations.
+═══════════════════════════════════════════════════════════════════ */
+const parseBilanTests = (raw) => {
+  if (Array.isArray(raw)) return raw;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+exports.createBilan = (req, res) => {
+  const userId = req.user.userId;
+  const { id_patient, id_consultation, tests, autres } = req.body;
+
+  if (!id_patient) {
+    return res.status(400).json({ error: "id_patient requis." });
+  }
+  if (
+    !Array.isArray(tests) ||
+    tests.length > 100 ||
+    tests.some((t) => typeof t !== 'string' || t.length === 0 || t.length > 64)
+  ) {
+    return res.status(400).json({ error: "Liste d'examens invalide." });
+  }
+
+  const autresText = typeof autres === 'string' ? autres.trim().slice(0, 2000) : '';
+  if (tests.length === 0 && !autresText) {
+    return res.status(400).json({ error: "Aucun examen demandé." });
+  }
+
+  const sql = `
+    INSERT INTO bilans (id_patient, id_consultation, id_medecin, tests, autres)
+    VALUES (?, ?, ?, ?, ?)`;
+
+  db.query(
+    sql,
+    [id_patient, id_consultation || null, userId, JSON.stringify(tests), autresText || null],
+    (err, result) => {
+      if (err) {
+        console.error("createBilan error:", err);
+        return res.status(500).json({ error: "Erreur serveur." });
+      }
+      res.status(201).json({ success: true, id: result.insertId });
+    }
+  );
+};
+
+exports.getBilansByPatient = (req, res) => {
+  const { id } = req.params;
+  const sql = `
+    SELECT id, id_patient, id_consultation, id_medecin, tests, autres, statut, date_creation, date_fait
+    FROM bilans
+    WHERE id_patient = ? AND deleted_at IS NULL
+    ORDER BY date_creation DESC, id DESC`;
+
+  db.query(sql, [id], (err, rows) => {
+    if (err) {
+      console.error("getBilansByPatient error:", err);
+      return res.status(500).json({ error: "Erreur serveur." });
+    }
+    res.json(rows.map((r) => ({ ...r, tests: parseBilanTests(r.tests) })));
+  });
+};
+
+exports.deleteBilan = (req, res) => {
+  const { id } = req.params;
+  db.query(
+    `UPDATE bilans SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL`,
+    [id],
+    (err, result) => {
+      if (err) {
+        console.error("deleteBilan error:", err);
+        return res.status(500).json({ error: "Erreur serveur." });
+      }
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ error: "Bilan introuvable." });
+      }
+      res.json({ success: true });
+    }
+  );
+};
+
+exports.updateBilanStatut = (req, res) => {
+  const { id } = req.params;
+  const { statut } = req.body;
+
+  // `statut` is whitelisted, so it is safe to branch on it below.
+  if (!['en_attente', 'fait'].includes(statut)) {
+    return res.status(400).json({ error: "Statut invalide." });
+  }
+
+  const sql = `
+    UPDATE bilans
+    SET statut = ?, date_fait = ${statut === 'fait' ? 'NOW()' : 'NULL'}
+    WHERE id = ? AND deleted_at IS NULL`;
+
+  db.query(sql, [statut, id], (err, result) => {
+    if (err) {
+      console.error("updateBilanStatut error:", err);
+      return res.status(500).json({ error: "Erreur serveur." });
+    }
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Bilan introuvable." });
+    }
+    res.json({ success: true });
+  });
+};

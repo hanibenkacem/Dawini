@@ -11,6 +11,7 @@ const OrdonnanceModal = ({
   patient,
   docType = "ordonnance",
   certificate,
+  bilan,
   templateId,
 }) => {
   const previewRef = useRef(null);
@@ -183,6 +184,7 @@ const OrdonnanceModal = ({
             note={note}
             docType={docType}
             certificate={certificate}
+            bilan={bilan}
             templateId={resolvedTemplateId}
             simplified={resolvedSimplified}
           />

@@ -4,6 +4,8 @@ import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { API_BASE } from '../config/api';
 import axios from "axios";
 import OrdonnanceModal from "../components/OrdonnanceModal";
+import BilanSelectModal from "../components/BilanSelectModal";
+import { groupSelectedBilan } from "../config/bilanTests";
 import ConsultationForm from "../components/ConsultationForm";
 
 const BASE = `${API_BASE}`;
@@ -39,6 +41,11 @@ const css = `
   .tab-btn { padding:10px 20px; font-size:13px; font-weight:500; border:none; background:transparent; cursor:pointer; color:var(--slate); border-bottom:2.5px solid transparent; transition:all 0.15s; font-family:'DM Sans',sans-serif; }
   .tab-btn.active { color:var(--teal-dk); border-bottom-color:var(--teal); background:var(--white); }
   .tab-btn:hover:not(.active) { color:var(--navy); background:var(--mist); }
+  .bilan-btn { display:flex; align-items:center; gap:6px; padding:7px 14px; font-size:12px; font-weight:600; border-radius:8px; border:1.5px solid var(--teal-md); background:var(--teal-lt); color:var(--teal-dk); cursor:pointer; transition:all 0.15s; font-family:'DM Sans',sans-serif; }
+  .bilan-btn:hover { border-color:var(--teal); filter:brightness(0.97); }
+  .bilan-card { background:var(--white); border:1.5px solid var(--line); border-radius:12px; padding:14px 16px; }
+  .bilan-group-label { font-size:11px; font-weight:600; color:var(--teal-dk); margin-bottom:4px; }
+  .bilan-chip { display:inline-block; font-size:12px; font-weight:500; color:var(--navy); background:var(--teal-lt); border:1px solid var(--teal-md); border-radius:20px; padding:2px 10px; margin:0 6px 6px 0; }
   .timeline-item { position:relative; padding-left:28px; padding-bottom:24px; }
   .timeline-item::before { content:''; position:absolute; left:7px; top:22px; width:2px; height:calc(100% - 12px); background:var(--line); }
   .timeline-item:last-child::before { display:none; }
@@ -424,6 +431,16 @@ export default function PatientDossier() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting]         = useState(false);
 
+  // Bilan biologique: picker visibility + last selection (so the doctor can
+  // reopen the picker and tweak it instead of starting from scratch).
+  const [showBilanPicker, setShowBilanPicker] = useState(false);
+  const [bilanDraft, setBilanDraft]           = useState(null);
+  const [bilans, setBilans]                   = useState([]);
+  const [bilanDeleteTarget, setBilanDeleteTarget] = useState(null);
+  const [bilanDeleting, setBilanDeleting]         = useState(false);
+  const [bilanAlertDismissed, setBilanAlertDismissed] = useState(false);
+  const [sessionBilanIds, setSessionBilanIds]         = useState([]);   // bilans created during this visit
+
   useEffect(() => {
     const handler = e => setDark(e.detail);
     window.addEventListener("med-theme-change", handler);
@@ -432,9 +449,14 @@ export default function PatientDossier() {
 
   useEffect(() => {
     if (!id) return;
+    setBilanDraft(null);
+    setBilans([]);
+    setBilanAlertDismissed(false);
+    setSessionBilanIds([]);
     fetchPatient();
     fetchConsultations();
     fetchSettings();
+    fetchBilans();
   }, [id]);
 
   const fetchPatient = async () => {
@@ -471,6 +493,15 @@ export default function PatientDossier() {
       const res = await axios.get(`${BASE}/ordonnance-settings/me`, { headers: hdr() });
       setDoctorSettings(Array.isArray(res.data) ? res.data[0] : res.data);
     } catch {}
+  };
+
+  const fetchBilans = async () => {
+    try {
+      const res = await axios.get(`${BASE}/consultation/patient/${id}/bilans`, { headers: hdr() });
+      setBilans(res.data);
+    } catch {
+      setBilans([]);
+    }
   };
 
   const handleChange = e => setForm({ ...form, [e.target.name]: e.target.value });
@@ -557,6 +588,53 @@ export default function PatientDossier() {
     }
   };
 
+  // Picker confirmed → save the bilan to the patient's record, then open the
+  // A5 preview/print modal. If saving fails the doctor can still print it.
+  const handleBilanConfirm = async (data) => {
+    setBilanDraft(data);
+    setShowBilanPicker(false);
+    try {
+      const res = await axios.post(
+        `${BASE}/consultation/bilan`,
+        {
+          id_patient: id,
+          id_consultation: activeConsultId,
+          tests: data.tests,
+          autres: data.autres,
+        },
+        { headers: hdr() }
+      );
+      if (res.data?.id) setSessionBilanIds((prev) => [...prev, res.data.id]);
+      fetchBilans();
+    } catch (e) {
+      alert(e.response?.data?.error || "Le bilan n'a pas pu être enregistré, mais vous pouvez l'imprimer.");
+    }
+    setSelectedConsultation({ docType: "bilan", bilan: data });
+  };
+
+  // Mark a bilan as done (results received) or put it back to "à faire".
+  const handleBilanStatut = async (bilan, statut) => {
+    try {
+      await axios.put(`${BASE}/consultation/bilan/${bilan.id}/statut`, { statut }, { headers: hdr() });
+      await fetchBilans();
+    } catch (e) {
+      alert(e.response?.data?.error || "Erreur lors de la mise à jour du bilan.");
+    }
+  };
+
+  const handleBilanDelete = async () => {
+    setBilanDeleting(true);
+    try {
+      await axios.delete(`${BASE}/consultation/bilan/${bilanDeleteTarget.id}`, { headers: hdr() });
+      setBilanDeleteTarget(null);
+      await fetchBilans();
+    } catch (e) {
+      alert(e.response?.data?.error || "Erreur lors de la suppression.");
+    } finally {
+      setBilanDeleting(false);
+    }
+  };
+
   const getInitials = (nom, prenom) =>
     `${(prenom?.[0] || "").toUpperCase()}${(nom?.[0] || "").toUpperCase()}`;
 
@@ -590,6 +668,18 @@ export default function PatientDossier() {
   const age       = calcAge(patient.date_naissance);
   const lastVisit = consultations.length > 0 ? fmts(consultations[0].date_consultation) : null;
 
+  // Bilans requested earlier and still not done. The alert shows when the
+  // patient is here: a consultation is in progress (coming from the queue) or
+  // the doctor opened the "Nouvelle consultation" tab. It ignores bilans
+  // requested during the current consultation or created during this visit.
+  const patientPresent = !!activeConsultId || activeTab === "new";
+  const pendingBilans = bilans.filter((b) => b.statut !== "fait");
+  const alertBilans = patientPresent && !bilanAlertDismissed
+    ? pendingBilans.filter(
+        (b) => !(activeConsultId && b.id_consultation === activeConsultId) && !sessionBilanIds.includes(b.id)
+      )
+    : [];
+
   return (
     <div className={`dossier-root flex h-screen${dark ? " dark" : ""}`} style={{ background:"var(--mist)" }}>
       <style>{css}</style>
@@ -609,6 +699,51 @@ export default function PatientDossier() {
                 <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:6, background:"rgba(255,255,255,0.15)", borderRadius:20, padding:"4px 12px" }}>
                   <span className="pulse-dot" style={{ width:8, height:8 }} />
                   <span style={{ fontSize:12, color:"#6ee7b7", fontWeight:600 }}>Active</span>
+                </div>
+              </div>
+            )}
+
+            {/* Pending bilan alert */}
+            {alertBilans.length > 0 && (
+              <div style={{ background:"linear-gradient(135deg,#fef3c7,#fde68a)", border:"1.5px solid #f59e0b", borderRadius:12, padding:"14px 20px", display:"flex", gap:14, alignItems:"flex-start" }}>
+                <div style={{ width:36, height:36, borderRadius:10, background:"rgba(245,158,11,0.25)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>🧪</div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontWeight:700, fontSize:14, color:"#78350f" }}>
+                    {alertBilans.length > 1 ? `${alertBilans.length} bilans biologiques à faire` : "Bilan biologique à faire"}
+                  </div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:8, marginTop:8 }}>
+                    {alertBilans.map((b) => {
+                      const labels = groupSelectedBilan(b.tests).flatMap((g) => g.tests.map((t) => t.label));
+                      const summary = labels.slice(0, 5).join(", ") + (labels.length > 5 ? `… (+${labels.length - 5})` : "");
+                      return (
+                        <div key={b.id} style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
+                          <span style={{ fontSize:12, color:"#92400e", flex:1, minWidth:200 }}>
+                            Demandé le {fmts(b.date_creation)}{summary ? ` — ${summary}` : ""}{b.autres ? (summary ? " + autres" : " — autres") : ""}
+                          </span>
+                          <button
+                            onClick={() => handleBilanStatut(b, "fait")}
+                            style={{ background:"#78350f", color:"white", border:"none", padding:"5px 12px", borderRadius:6, fontSize:12, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}
+                          >
+                            ✓ Marquer comme fait
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div style={{ display:"flex", flexDirection:"column", gap:6, flexShrink:0 }}>
+                  <button
+                    onClick={() => setActiveTab("bilans")}
+                    style={{ background:"white", color:"#78350f", border:"1px solid #f59e0b", padding:"5px 12px", borderRadius:6, fontSize:12, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}
+                  >
+                    Voir les bilans
+                  </button>
+                  <button
+                    onClick={() => setBilanAlertDismissed(true)}
+                    style={{ background:"transparent", color:"#92400e", border:"none", padding:"3px 12px", fontSize:12, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}
+                  >
+                    Plus tard
+                  </button>
                 </div>
               </div>
             )}
@@ -714,7 +849,22 @@ export default function PatientDossier() {
                     >
                       {activeConsultId ? "🩺 Consultation en cours" : "✚ Nouvelle consultation"}
                     </button>
+                    <button className={`tab-btn${activeTab==="bilans"?" active":""}`} onClick={() => setActiveTab("bilans")}>
+                      🧪 Bilans
+                      {bilans.length > 0 && (
+                        <span style={{ marginLeft:6, background:"#f0fdfa", color:"#0d9488", border:"1px solid #99f6e4", borderRadius:20, fontSize:11, padding:"1px 7px", fontWeight:600 }}>
+                          {bilans.length}
+                        </span>
+                      )}
+                    </button>
                   </div>
+
+                  {/* Bilan biologique shortcut — while filling a consultation or browsing bilans */}
+                  {(activeTab === "new" || activeTab === "bilans") && (
+                    <button type="button" className="bilan-btn" onClick={() => setShowBilanPicker(true)}>
+                      🧪 Bilan biologique
+                    </button>
+                  )}
                 </div>
 
                 <div style={{ padding:24 }}>
@@ -800,15 +950,93 @@ export default function PatientDossier() {
                         })
                       )}
                     </div>
+                  ) : activeTab === "bilans" ? (
+                    <div style={{ maxHeight:560, overflowY:"auto", paddingRight:4, display:"flex", flexDirection:"column", gap:12 }}>
+                      {bilans.length === 0 ? (
+                        <div style={{ textAlign:"center", padding:"60px 0", color:"#94a3b8" }}>
+                          <div style={{ fontSize:48, marginBottom:12, opacity:0.4 }}>🧪</div>
+                          <p style={{ fontFamily:"'DM Serif Display',serif", fontSize:18, color:"#64748b" }}>Aucun bilan</p>
+                          <p style={{ fontSize:13, marginTop:4 }}>Les bilans biologiques demandés apparaîtront ici.</p>
+                        </div>
+                      ) : (
+                        bilans.map((b) => {
+                          const groups = groupSelectedBilan(b.tests);
+                          const total = groups.reduce((n, g) => n + g.tests.length, 0);
+                          return (
+                            <div key={b.id} className="bilan-card">
+                              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+                                <span style={{ fontSize:11, fontWeight:600, letterSpacing:"0.06em", color:"#0d9488", background:"#f0fdfa", border:"1px solid #99f6e4", borderRadius:20, padding:"2px 10px" }}>
+                                  Bilan biologique{total > 0 ? ` — ${total} examen${total > 1 ? "s" : ""}` : ""}
+                                </span>
+                                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                                  <span style={{ fontSize:11, fontWeight:700, borderRadius:20, padding:"2px 10px", ...(b.statut === "fait"
+                                    ? { color:"#065f46", background:"#ecfdf5", border:"1px solid #a7f3d0" }
+                                    : { color:"#92400e", background:"#fef3c7", border:"1px solid #fcd34d" }) }}>
+                                    {b.statut === "fait" ? `✓ Fait${b.date_fait ? ` le ${fmts(b.date_fait)}` : ""}` : "⏳ À faire"}
+                                  </span>
+                                  <span style={{ fontSize:12, color:"#94a3b8" }}>🗓 {fmts(b.date_creation)}</span>
+                                </div>
+                              </div>
+
+                              {groups.map((g) => (
+                                <div key={g.id} style={{ marginBottom:6 }}>
+                                  <div className="bilan-group-label">{g.label}</div>
+                                  <div>
+                                    {g.tests.map((t) => (
+                                      <span key={t.id} className="bilan-chip">{t.label}</span>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+
+                              {b.autres && (
+                                <div style={{ marginTop:4 }}>
+                                  <div className="bilan-group-label">Autres</div>
+                                  <p style={{ fontSize:13, color:"var(--slate)", lineHeight:1.6, margin:0, whiteSpace:"pre-wrap" }}>{b.autres}</p>
+                                </div>
+                              )}
+
+                              <div style={{ display:"flex", gap:8, marginTop:12, flexWrap:"wrap" }}>
+                                <button
+                                  onClick={() => handleBilanStatut(b, b.statut === "fait" ? "en_attente" : "fait")}
+                                  style={b.statut === "fait"
+                                    ? { background:"#f1f5f9", color:"#475569", border:"1px solid #e2e8f0", padding:"6px 14px", borderRadius:6, fontSize:12, cursor:"pointer", display:"flex", alignItems:"center", gap:5, fontFamily:"'DM Sans',sans-serif" }
+                                    : { background:"#ecfdf5", color:"#065f46", border:"1px solid #a7f3d0", padding:"6px 14px", borderRadius:6, fontSize:12, cursor:"pointer", display:"flex", alignItems:"center", gap:5, fontFamily:"'DM Sans',sans-serif" }}
+                                >
+                                  {b.statut === "fait" ? "↺ Remettre à faire" : "✓ Marquer comme fait"}
+                                </button>
+                                <button
+                                  onClick={() => setSelectedConsultation({ docType: "bilan", bilan: { tests: b.tests, autres: b.autres || "" } })}
+                                  style={{ background:"#0f172a", color:"white", border:"none", padding:"6px 14px", borderRadius:6, fontSize:12, cursor:"pointer", display:"flex", alignItems:"center", gap:5, fontFamily:"'DM Sans',sans-serif" }}
+                                >
+                                  👁️ Revoir / Imprimer
+                                </button>
+                                <button
+                                  onClick={() => setBilanDeleteTarget(b)}
+                                  style={{ background:"#fff1f2", color:"#be123c", border:"1px solid #fecdd3", padding:"6px 14px", borderRadius:6, fontSize:12, cursor:"pointer", display:"flex", alignItems:"center", gap:5, fontFamily:"'DM Sans',sans-serif" }}
+                                >
+                                  🗑 Supprimer
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
                   ) : (
                     <ConsultationForm
                       form={form}
                       setForm={setForm}
                       onChange={handleChange}
                       onSubmit={handleSubmit}
-                      onOpenPreview={(docType = "ordonnance", certData = null) =>
-                        setSelectedConsultation({ docType, medicaments: form.medicaments, certData })
-                      }
+                      onOpenPreview={(docType = "ordonnance", certData = null) => {
+                        // A "bilan" request first goes through the test picker.
+                        if (docType === "bilan") {
+                          setShowBilanPicker(true);
+                          return;
+                        }
+                        setSelectedConsultation({ docType, medicaments: form.medicaments, certData });
+                      }}
                       submitting={submitting}
                     />
                   )}
@@ -847,6 +1075,31 @@ export default function PatientDossier() {
         </div>
       )}
 
+      {bilanDeleteTarget && (
+        <div className="pay-overlay" onClick={() => !bilanDeleting && setBilanDeleteTarget(null)}>
+          <div className="pay-modal" style={{ width:"min(400px,95vw)", padding:"28px" }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize:36, marginBottom:8 }}>🗑</div>
+            <div style={{ fontSize:18, fontWeight:800, color:"#0f172a", marginBottom:6 }}>Supprimer ce bilan ?</div>
+            <div style={{ fontSize:13, color:"#64748b", lineHeight:1.5, marginBottom:20 }}>
+              Bilan biologique du {fmts(bilanDeleteTarget.date_creation)}
+            </div>
+            <div style={{ display:"flex", gap:10 }}>
+              <button className="pay-btn" onClick={() => setBilanDeleteTarget(null)} disabled={bilanDeleting}
+                style={{ background:"#f1f5f9", color:"#475569" }}>Annuler</button>
+              <button className="pay-btn" onClick={handleBilanDelete} disabled={bilanDeleting}
+                style={{ background:"#e11d48", color:"white" }}>{bilanDeleting ? "…" : "Supprimer"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <BilanSelectModal
+        show={showBilanPicker}
+        onClose={() => setShowBilanPicker(false)}
+        onConfirm={handleBilanConfirm}
+        initial={bilanDraft}
+      />
+
       <OrdonnanceModal
         show={!!selectedConsultation}
         onClose={() => setSelectedConsultation(null)}
@@ -855,6 +1108,7 @@ export default function PatientDossier() {
         docType={selectedConsultation?.docType || "ordonnance"}
         medicaments={selectedConsultation?.medicaments}
         certificate={selectedConsultation?.certData}
+        bilan={selectedConsultation?.bilan}
       />
     </div>
   );

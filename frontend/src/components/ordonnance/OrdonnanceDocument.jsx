@@ -1,5 +1,6 @@
 import { forwardRef } from "react";
 import { getTemplate } from "../../config/ordonnanceTemplates";
+import { groupSelectedBilan } from "../../config/bilanTests";
 
 export const TITLES = {
   ordonnance:    "ORDONNANCE MÉDICALE",
@@ -7,6 +8,7 @@ export const TITLES = {
   arret_travail: "CERTIFICAT D'ARRÊT DE TRAVAIL",
   bonne_sante:   "CERTIFICAT DE BONNE SANTÉ",
   mariage:       "CERTIFICAT MÉDICAL PRÉNUPTIAL",
+  bilan:         "BILAN BIOLOGIQUE",
 };
 
 export const PRINT_LABELS = {
@@ -15,6 +17,7 @@ export const PRINT_LABELS = {
   arret_travail: "Arrêt de travail",
   bonne_sante:   "Certificat de bonne santé",
   mariage:       "Certificat de mariage",
+  bilan:         "Bilan biologique",
 };
 
 const fmtLong = (d) =>
@@ -143,6 +146,15 @@ const doctorNameStyle = (primaryText, secondaryText, fontFamily, maxWidthPx) => 
   return { fontSize: "14pt" };
 };
 
+// Bilan layout scales down when many tests are selected so the list always
+// fits on a single A5 page (same idea as MED_LIST_SCALES for prescriptions).
+const BILAN_SCALES = {
+  normal:  { testSize: "10pt",  groupSize: "8pt",   gap: "10px", rowPad: "2px" },
+  compact: { testSize: "9pt",   groupSize: "7.5pt", gap: "7px",  rowPad: "1px" },
+  tight:   { testSize: "8.5pt", groupSize: "7pt",   gap: "5px",  rowPad: "0px" },
+};
+const bilanScaleForCount = (count) => (count > 24 ? "tight" : count > 14 ? "compact" : "normal");
+
 /**
  * Shared A5 document renderer. Templates control which header blocks show
  * (logo, Arabic doctor name) via theme.showLogo / theme.showArabicName —
@@ -163,9 +175,14 @@ const doctorNameStyle = (primaryText, secondaryText, fontFamily, maxWidthPx) => 
  *
  * Certificate sentences don't repeat the patient name or the doctor's
  * specialty: both already appear in the patient bar / header above.
+ *
+ * docType "bilan" prints a lab test request: `bilan` is
+ * { tests: string[] (ids from config/bilanTests), autres: string }.
+ * Selected tests are grouped by category in two columns, plus a free-text
+ * "Autres" block.
  */
 const OrdonnanceDocument = forwardRef(function OrdonnanceDocument(
-  { doctor, patient, medicaments, note, docType = "ordonnance", certificate, templateId, simplified = false },
+  { doctor, patient, medicaments, note, docType = "ordonnance", certificate, bilan, templateId, simplified = false },
   ref
 ) {
   const theme = getTemplate(templateId).theme;
@@ -179,6 +196,11 @@ const OrdonnanceDocument = forwardRef(function OrdonnanceDocument(
     cert.dateDebut && cert.dateFin
       ? Math.round((new Date(cert.dateFin) - new Date(cert.dateDebut)) / 86400000) + 1
       : null;
+
+  const bilanGroups = docType === "bilan" ? groupSelectedBilan(bilan?.tests) : [];
+  const bilanAutres = docType === "bilan" ? (bilan?.autres || "").trim() : "";
+  const bilanCount = bilanGroups.reduce((n, g) => n + g.tests.length, 0);
+  const bs = BILAN_SCALES[bilanScaleForCount(bilanCount)];
 
   return (
     <div
@@ -339,6 +361,58 @@ const OrdonnanceDocument = forwardRef(function OrdonnanceDocument(
             {note && (
               <div style={{ backgroundColor: "#fef9e6", padding: "8px 10px", borderRadius: "8px", marginTop: "12px", fontSize: "9pt" }}>
                 <strong>📌 Instructions :</strong> {note}
+              </div>
+            )}
+          </div>
+        ) : docType === "bilan" ? (
+          <div style={{ margin: "16px 0", minHeight: "250px" }}>
+            {bilanGroups.length > 0 ? (
+              <div style={{ columnCount: 2, columnGap: "22px" }}>
+                {bilanGroups.map((g) => (
+                  <div
+                    key={g.id}
+                    style={{ breakInside: "avoid", pageBreakInside: "avoid", marginBottom: bs.gap }}
+                  >
+                    <div
+                      style={{
+                        fontSize: bs.groupSize, fontWeight: 700, color: theme.primary,
+                        borderBottom: `1px dotted ${theme.border}`, paddingBottom: "1px", marginBottom: "3px",
+                      }}
+                    >
+                      {g.label}
+                    </div>
+                    {g.tests.map((t) => (
+                      <div
+                        key={t.id}
+                        style={{
+                          display: "flex", alignItems: "baseline", gap: "6px",
+                          fontSize: bs.testSize, color: "#111827", padding: `${bs.rowPad} 0`,
+                          breakInside: "avoid", pageBreakInside: "avoid",
+                        }}
+                      >
+                        <span style={{ flexShrink: 0 }}>☑</span>
+                        <span>{t.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              !bilanAutres && (
+                <p style={{ color: "#94a3b8", fontStyle: "italic", paddingLeft: "6px" }}>Aucun examen demandé.</p>
+              )
+            )}
+            {bilanAutres && (
+              <div style={{ marginTop: "10px", fontSize: bs.testSize, color: "#111827", breakInside: "avoid", pageBreakInside: "avoid" }}>
+                <div
+                  style={{
+                    fontSize: bs.groupSize, fontWeight: 700, color: theme.primary,
+                    borderBottom: `1px dotted ${theme.border}`, paddingBottom: "1px", marginBottom: "3px",
+                  }}
+                >
+                  Autres
+                </div>
+                <div style={{ whiteSpace: "pre-wrap" }}>{bilanAutres}</div>
               </div>
             )}
           </div>

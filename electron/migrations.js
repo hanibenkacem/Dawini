@@ -16,6 +16,21 @@ async function ensureColumnExists(connection, table, column, definition) {
   return true;
 }
 
+async function ensureTableExists(connection, table, createSql) {
+  const [rows] = await connection.query(
+    `SELECT COUNT(*) AS cnt
+     FROM INFORMATION_SCHEMA.TABLES
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = ?`,
+    [table]
+  );
+  if (rows[0].cnt > 0) return false; // already there
+
+  await connection.query(createSql);
+  console.log(`[migrations] created table ${table}`);
+  return true;
+}
+
 async function ensureForeignKeyCascade(connection, table, constraintName, column, refTable, refColumn, onDelete = 'CASCADE') {
   const [rows] = await connection.query(
     `SELECT DELETE_RULE
@@ -87,18 +102,53 @@ async function runMigrations(creds) {
       'id',
       'CASCADE'
     );
-        await ensureColumnExists(
+    await ensureColumnExists(
       connection,
       'consultations',
       'deleted_at',
       'DATETIME NULL DEFAULT NULL'
     );
     await ensureColumnExists(
-  connection,
-  'ordonnance_settings',
-  'numero_ordre',
-  'VARCHAR(50) NULL DEFAULT NULL'
-);
+      connection,
+      'ordonnance_settings',
+      'numero_ordre',
+      'VARCHAR(50) NULL DEFAULT NULL'
+    );
+
+    // Bilans biologiques (lab test requests). No foreign keys on purpose:
+    // consultations are soft-deleted and the ids are only used for lookup.
+    await ensureTableExists(
+      connection,
+      'bilans',
+      `CREATE TABLE bilans (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        id_patient INT NOT NULL,
+        id_consultation INT NULL,
+        id_medecin INT NULL,
+        tests TEXT NOT NULL,
+        autres TEXT NULL,
+        date_creation DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        deleted_at DATETIME NULL,
+        INDEX idx_bilans_patient (id_patient, deleted_at),
+        INDEX idx_bilans_consultation (id_consultation)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+    );
+
+    // Bilan follow-up: 'en_attente' (still to do) / 'fait' (done), used to
+    // alert the doctor when the patient comes back with a pending bilan.
+    await ensureColumnExists(
+      connection,
+      'bilans',
+      'statut',
+      "VARCHAR(20) NOT NULL DEFAULT 'en_attente'"
+    );
+    await ensureColumnExists(
+      connection,
+      'bilans',
+      'date_fait',
+      'DATETIME NULL DEFAULT NULL'
+    );
+
     // future migrations get appended here
   } finally {
     await connection.end();

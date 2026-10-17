@@ -50,7 +50,7 @@ exports.UserRegister =  async (req,res)=>{
                 const token = jwt.sign(
                     {userId: utilisateur.id , role : utilisateur.role,prenom: utilisateur.prenom},
                 'HANI',
-                {expiresIn : '3h'}
+                {expiresIn : '12h'}
                 
             )
             console.log(token)
